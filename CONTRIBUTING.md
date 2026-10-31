@@ -13,3 +13,11 @@ Thanks for helping! A few guidelines:
 - Mark user-identifying text with `.privacySensitive()` so Privacy mode works.
 - Never block the main thread: file I/O goes through `Task.detached`, processes through `Shell.run`.
 - Keep UI strings in English; localizations are welcome via a String Catalog.
+
+## Releasing
+
+1. Push a tag: `git tag v0.2.0 && git push origin v0.2.0`.
+2. The *Release* workflow builds a universal app, publishes `Kodisle.zip` + `Kodisle.zip.sha256` to GitHub Releases
+   and bumps the Homebrew cask in `pablorod1/homebrew-tap` (needs a `TAP_TOKEN` secret: a fine-grained token with
+   *Contents: read & write* on that repo only). Without the secret, update `Casks/kodisle.rb` (version + sha256) by hand.
+3. Installed apps pick up the new version within a day (Settings › General › Updates).

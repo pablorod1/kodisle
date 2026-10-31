@@ -47,6 +47,8 @@ and dropped after two minutes.
 | `chatgpt.com/backend-api/wham/usage` | Codex limits enabled | Codex access token (`~/.codex/auth.json`, read-only) |
 | `api.github.com` (through `gh`) | `gh` installed and logged in | handled entirely by `gh` |
 | `api.vercel.com` | Vercel CLI logged in | Vercel CLI token (`auth.json`, read-only, never refreshed) |
+| `api.github.com/repos/pablorod1/kodisle/releases/latest` | Once a day if update checks are on | none (anonymous) |
+| `github.com/pablorod1/kodisle/releases/download/…` | Only when you click *Update* | none — verified against the release SHA-256 |
 | URLs you add as endpoints | Endpoints widget | none |
 
 ## Local data Kodisle reads

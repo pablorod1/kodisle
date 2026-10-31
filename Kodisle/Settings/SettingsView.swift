@@ -67,6 +67,10 @@ private struct GeneralSettings: View {
                     Stepper("\(Int(settings.config.breakMinutes)) min break", value: $settings.config.breakMinutes, in: 1...30)
                 }
             }
+            Section("Updates") {
+                UpdateRow()
+                Toggle("Check for updates automatically (once a day)", isOn: $settings.config.autoUpdateCheck)
+            }
             Section {
                 Button("Reset all settings", role: .destructive) { settings.reset() }
             }
@@ -304,5 +308,33 @@ private struct PrivacySettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+private struct UpdateRow: View {
+    @Bindable private var updater = Updater.shared
+
+    var body: some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Kodisle \(updater.currentVersion)")
+                if let release = updater.available {
+                    Link("Version \(release.version) is available — what's new", destination: URL(string: release.notesURL)!)
+                        .font(.caption)
+                } else if let error = updater.error {
+                    Text(error).font(.caption).foregroundStyle(.red)
+                } else if let checked = updater.lastChecked {
+                    Text("Up to date · checked \(Fmt.ago(checked))").font(.caption).foregroundStyle(.secondary)
+                }
+            }
+            Spacer()
+            if updater.checking || updater.installing { ProgressView().controlSize(.small) }
+            if updater.available != nil {
+                Button("Update & relaunch") { Task { await updater.install() } }
+                    .buttonStyle(.borderedProminent).disabled(updater.installing)
+            } else {
+                Button("Check now") { Task { await updater.check() } }.disabled(updater.checking)
+            }
+        }
     }
 }

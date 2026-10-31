@@ -39,6 +39,7 @@ struct KodisleConfig: Codable, Equatable {
 
     // Privacy & tools
     var privacyMode = false
+    var autoUpdateCheck = true
     var agentSummaries = true
     var clipboardClearSeconds: Double = 60
     var focusMinutes: Double = 25

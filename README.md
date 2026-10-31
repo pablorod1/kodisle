@@ -48,16 +48,26 @@ Both talk to Kodisle through a local Unix socket (`~/.kodisle/bridge.sock`, owne
 
 ## Install
 
-Requirements: macOS 26 (Tahoe) or later, Xcode 26+, [XcodeGen](https://github.com/yonaskolb/XcodeGen).
+Requires macOS 26 (Tahoe) or later. Universal app (Apple Silicon and Intel).
+
+**Homebrew**
 
 ```sh
-git clone https://github.com/pablorod1/kodisle.git && cd kodisle
-brew install xcodegen
-./scripts/build-release.sh
-open build/Build/Products/Release/Kodisle.app
+brew install --cask pablorod1/tap/kodisle
 ```
 
-Or for development: `xcodegen generate && open Kodisle.xcodeproj`.
+**One-line installer** (downloads the latest release, verifies its SHA-256 and installs to `/Applications`; [read it first](install.sh))
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/pablorod1/kodisle/main/install.sh | sh
+```
+
+**Manual**: download `Kodisle.zip` from [Releases](https://github.com/pablorod1/kodisle/releases). The app isn't notarized yet, so macOS will
+ask you to allow it in *System Settings › Privacy & Security › Open Anyway* (Homebrew and the installer avoid this).
+
+**Updates**: Kodisle checks GitHub Releases once a day and can update itself from *Settings › General* (or `brew upgrade`).
+
+**From source**: `brew install xcodegen && ./scripts/build-release.sh`, or `xcodegen generate && open Kodisle.xcodeproj`.
 
 ### Optional setup
 
@@ -108,7 +118,7 @@ These are the endpoints the official CLIs use. They're undocumented and may chan
 
 - *Waiting for you* is a heuristic: a pending tool call with no activity for ~60 s. A long-running command can look the same as a permission prompt.
 - The Kodisle dock matches your macOS Dock size and magnification. Drag to reorder apps and widgets; right-click an app to list its windows (needs the Accessibility permission, which macOS asks again after each rebuild of an ad-hoc signed app).
-- No notarized builds yet. The release build is ad-hoc signed, so the first launch needs right-click › Open.
+- Not notarized yet (no Apple Developer ID): Homebrew and the installer handle Gatekeeper; manual downloads need *Open Anyway* once.
 
 ## Development
 
