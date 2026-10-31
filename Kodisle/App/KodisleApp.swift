@@ -52,6 +52,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 island?.expand(tab: tab)
             }
         }
+        if defaults.string(forKey: "KodisleDebugAutoUpdate") != nil {
+            // End-to-end test of the updater: check, then install whatever is newer.
+            Task {
+                try? await Task.sleep(for: .seconds(5))
+                await Updater.shared.check()
+                print("[update] current \(Updater.shared.currentVersion), available \(Updater.shared.available?.version ?? "none")")
+                fflush(stdout)
+                await Updater.shared.install()
+                print("[update] error: \(Updater.shared.error ?? "none")"); fflush(stdout)
+            }
+        }
         if defaults.string(forKey: "KodisleDebugDumpAgents") != nil {
             // Prints detected agent sessions to stdout (run the binary from a terminal).
             Task {
