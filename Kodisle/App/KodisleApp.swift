@@ -52,6 +52,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 island?.expand(tab: tab)
             }
         }
+        if defaults.string(forKey: "KodisleDebugDumpAgents") != nil {
+            // Prints detected agent sessions to stdout (run the binary from a terminal).
+            Task {
+                try? await Task.sleep(for: .seconds(6))
+                for a in KodisleStore.shared.agents {
+                    print("[agent] \(a.provider.shortName) | \(a.state) | \(a.project) | \(a.title ?? "-") | \(a.summary.map { String($0.prefix(60)) } ?? "-")")
+                }
+                fflush(stdout)
+            }
+        }
         if defaults.string(forKey: "KodisleDebugEvent") != nil {
             // Replays an "agent finished" banner using the most recent real session.
             Task {

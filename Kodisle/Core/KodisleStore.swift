@@ -32,6 +32,10 @@ final class KodisleStore {
     @ObservationIgnored private let sampler = SystemSampler()
     @ObservationIgnored private var downloadsWatcher: DirectoryWatcher?
     @ObservationIgnored private var bridge: Bridge?
+    @ObservationIgnored private var visibleCounts: [WidgetID: Int] = [:]
+    @ObservationIgnored private var paused = false
+    @ObservationIgnored private var resumeWaiters: [CheckedContinuation<Void, Never>] = []
+    @ObservationIgnored private var sleepObservers: [NSObjectProtocol] = []
     @ObservationIgnored private var downloadsStarted = false
     @ObservationIgnored private var aiThresholds: [String: Int] = [:]
     @ObservationIgnored private var eventDismiss: Task<Void, Never>?
@@ -43,13 +47,13 @@ final class KodisleStore {
         guard tasks.isEmpty else { return }
         tasks = [
             loop({ _ in 5 }) { await $0.refreshDevServers() },
-            loop({ _ in 4 }) { await $0.refreshAgents() },
+            loop({ $0.runningAgents.isEmpty ? 10 : 4 }) { await $0.refreshAgents() },
             loop({ $0.config.aiRefreshSeconds }) { await $0.refreshAI() },
             loop({ $0.config.githubRefreshSeconds }) { await $0.refreshGitHub() },
             loop({ _ in 30 }) { await $0.refreshRepos() },
             loop({ $0.config.endpointRefreshSeconds }) { await $0.refreshEndpoints() },
-            loop({ _ in 10 }) { await $0.refreshDocker() },
-            loop({ _ in 3 }) { $0.system = $0.sampler.snapshot() },
+            loop({ _ in 15 }) { if $0.isVisible(.docker) { await $0.refreshDocker() } },
+            loop({ _ in 5 }) { if $0.isVisible(.system, .battery, .downloads) { $0.sampleSystem() } },
             loop({ $0.deployments.contains(where: \.isActive) ? 12 : 60 }) { await $0.refreshVercel() },
             loop({ _ in 2 }) { $0.pruneAnsweredRequests() },
         ]
@@ -59,6 +63,7 @@ final class KodisleStore {
         }
         bridge.start()
         self.bridge = bridge
+        observeSleep()
     }
 
     /// Downloads access triggers a macOS privacy prompt that blocks the calling thread,
@@ -83,10 +88,79 @@ final class KodisleStore {
         Task { @MainActor [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
+                await self.waitIfPaused()
                 await work(self)
-                try? await Task.sleep(for: .seconds(max(1, interval(self))))
+                let seconds = max(1, interval(self))
+                // Tolerance lets macOS coalesce Kodisle's timers with other wakeups.
+                try? await Task.sleep(for: .seconds(seconds), tolerance: .seconds(seconds * 0.25))
             }
         }
+    }
+
+    // MARK: Visibility & power
+
+    func widgetAppeared(_ id: WidgetID) {
+        let count = visibleCounts[id, default: 0]
+        visibleCounts[id] = count + 1
+        guard count == 0 else { return }
+        // Refresh on-demand sources right away when they come on screen.
+        switch id {
+        case .docker: Task { await refreshDocker() }
+        case .system, .battery, .downloads: sampleSystem()
+        default: break
+        }
+    }
+
+    func widgetDisappeared(_ id: WidgetID) {
+        visibleCounts[id] = max(0, visibleCounts[id, default: 0] - 1)
+    }
+
+    func isVisible(_ ids: WidgetID...) -> Bool { ids.contains { visibleCounts[$0, default: 0] > 0 } }
+
+    private func sampleSystem() {
+        var snap = sampler.snapshot()
+        snap.cpu = (snap.cpu * 100).rounded() / 100                       // 1% steps
+        snap.memUsed = snap.memUsed / (64 << 20) * (64 << 20)               // 64 MB steps
+        snap.diskFree = snap.diskFree / (256 << 20) * (256 << 20)
+        if snap != system { system = snap }
+    }
+
+    /// No polling while the displays sleep or the session is locked / switched away.
+    private func observeSleep() {
+        let ws = NSWorkspace.shared.notificationCenter
+        let pauseNames: [Notification.Name] = [NSWorkspace.screensDidSleepNotification, NSWorkspace.sessionDidResignActiveNotification]
+        let resumeNames: [Notification.Name] = [NSWorkspace.screensDidWakeNotification, NSWorkspace.sessionDidBecomeActiveNotification]
+        for name in pauseNames {
+            sleepObservers.append(ws.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { KodisleStore.shared.setPaused(true) }
+            })
+        }
+        for name in resumeNames {
+            sleepObservers.append(ws.addObserver(forName: name, object: nil, queue: .main) { _ in
+                MainActor.assumeIsolated { KodisleStore.shared.setPaused(false) }
+            })
+        }
+        let dnc = DistributedNotificationCenter.default()
+        sleepObservers.append(dnc.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { KodisleStore.shared.setPaused(true) }
+        })
+        sleepObservers.append(dnc.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { _ in
+            MainActor.assumeIsolated { KodisleStore.shared.setPaused(false) }
+        })
+    }
+
+    private func setPaused(_ value: Bool) {
+        guard value != paused else { return }
+        paused = value
+        if !value {
+            resumeWaiters.forEach { $0.resume() }
+            resumeWaiters.removeAll()
+        }
+    }
+
+    private func waitIfPaused() async {
+        guard paused else { return }
+        await withCheckedContinuation { resumeWaiters.append($0) }
     }
 
     // MARK: Refreshers
@@ -105,7 +179,14 @@ final class KodisleStore {
     }
 
     func refreshAgents() async {
+        // Round activity to 30 s so a busy session doesn't redraw the island every scan;
+        // state changes (working → finished…) still propagate immediately.
         let sessions = await AgentProvider.scan(idleAfter: config.agentIdleSeconds, summaries: config.agentSummaries)
+            .map { session -> AgentSession in
+                var s = session
+                s.lastActivity = Date(timeIntervalSince1970: (session.lastActivity.timeIntervalSince1970 / 30).rounded(.down) * 30)
+                return s
+            }
         let previous = Dictionary(uniqueKeysWithValues: agents.map { ($0.id, $0.state) })
         for session in sessions {
             guard let old = previous[session.id], old != session.state else { continue }

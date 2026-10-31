@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 
 /// Lists TCP ports in LISTEN state owned by processes started from a project folder.
@@ -5,82 +6,62 @@ import Foundation
 /// Only the process name, ports and working directory are read. Command-line arguments
 /// are deliberately ignored because they often contain tokens (`--token=…`, DB URLs…).
 enum DevServerProvider {
-    private struct Entry { var command = ""; var ports = Set<Int>() }
-
+    /// Native scan with libproc (no `lsof`/`ps` processes): for every process whose working
+    /// directory is inside the home folder, list its TCP sockets in LISTEN state. ~4 ms.
     static func fetch() async -> [DevServer] {
-        guard let result = try? await Shell.run("lsof", ["-nP", "+c", "0", "-iTCP", "-sTCP:LISTEN", "-Fpcn"]), result.ok || !result.stdout.isEmpty
-        else { return [] }
-
-        var entries: [Int32: Entry] = [:]
-        var current: Int32 = 0
-        for line in result.text.split(separator: "\n") {
-            guard let field = line.first else { continue }
-            let value = String(line.dropFirst())
-            switch field {
-            case "p":
-                current = Int32(value) ?? 0
-                if entries[current] == nil { entries[current] = Entry() }
-            case "c":
-                entries[current]?.command = value
-            case "n":
-                if let colon = value.lastIndex(of: ":"), let port = Int(value[value.index(after: colon)...]) {
-                    entries[current]?.ports.insert(port)
-                }
-            default: break
-            }
-        }
-        guard !entries.isEmpty else { return [] }
-
-        let pids = entries.keys.map(String.init).joined(separator: ",")
-        let cwds = await workingDirectories(pids: pids)
-        let uptimes = await uptimes(pids: pids)
-        let home = NSHomeDirectory()
-
-        return entries.compactMap { pid, entry -> DevServer? in
-            // Apps launched from Finder/launchd run in "/" or "~": only project folders count.
-            guard let cwd = cwds[pid], cwd.hasPrefix(home + "/"), !entry.ports.isEmpty else { return nil }
-            let project = (cwd as NSString).lastPathComponent
-            return DevServer(pid: pid, command: entry.command, ports: entry.ports.sorted(), cwd: cwd,
-                             project: project, framework: framework(cwd: cwd, command: entry.command),
-                             uptime: uptimes[pid])
-        }
-        .sorted { ($0.ports.first ?? 0) < ($1.ports.first ?? 0) }
+        await Task.detached(priority: .utility) { scan() }.value
     }
 
-    private static func workingDirectories(pids: String) async -> [Int32: String] {
-        guard let result = try? await Shell.run("lsof", ["-a", "-d", "cwd", "-Fn", "-p", pids]) else { return [:] }
-        var map: [Int32: String] = [:]
-        var current: Int32 = 0
-        for line in result.text.split(separator: "\n") {
-            if line.hasPrefix("p") { current = Int32(line.dropFirst()) ?? 0 }
-            if line.hasPrefix("n") { map[current] = String(line.dropFirst()) }
+    private static func scan() -> [DevServer] {
+        let home = NSHomeDirectory() + "/"
+        let capacity = proc_listallpids(nil, 0)
+        guard capacity > 0 else { return [] }
+        var pids = [pid_t](repeating: 0, count: Int(capacity) + 64)
+        let count = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<pid_t>.size))
+        let me = getpid()
+        var servers: [DevServer] = []
+
+        for pid in pids.prefix(Int(max(0, count))) where pid > 0 && pid != me {
+            // Cheap filter first: apps launched from Finder/launchd run in "/" or "~".
+            var vpi = proc_vnodepathinfo()
+            guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &vpi, Int32(MemoryLayout<proc_vnodepathinfo>.size)) > 0 else { continue }
+            let cwd = withUnsafeBytes(of: vpi.pvi_cdir.vip_path) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
+            guard cwd.hasPrefix(home) else { continue }
+
+            let ports = listeningPorts(pid)
+            guard !ports.isEmpty else { continue }
+            var name = [CChar](repeating: 0, count: Int(MAXPATHLEN))
+            proc_name(pid, &name, UInt32(name.count))
+            let command = String(cString: name)
+            var info = proc_bsdinfo()
+            let uptime = proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, Int32(MemoryLayout<proc_bsdinfo>.size)) > 0
+                ? Fmt.duration(Date().timeIntervalSince1970 - TimeInterval(info.pbi_start_tvsec)) : nil
+            servers.append(DevServer(pid: pid, command: command, ports: ports, cwd: cwd,
+                                     project: (cwd as NSString).lastPathComponent,
+                                     framework: framework(cwd: cwd, command: command), uptime: uptime))
         }
-        return map
+        return servers.sorted { ($0.ports.first ?? 0) < ($1.ports.first ?? 0) }
     }
 
-    private static func uptimes(pids: String) async -> [Int32: String] {
-        guard let result = try? await Shell.run("ps", ["-o", "pid=,etime=", "-p", pids]) else { return [:] }
-        var map: [Int32: String] = [:]
-        for line in result.text.split(separator: "\n") {
-            let parts = line.split(separator: " ", omittingEmptySubsequences: true)
-            guard parts.count == 2, let pid = Int32(parts[0]) else { continue }
-            map[pid] = humanize(etime: String(parts[1]))
+    private static func listeningPorts(_ pid: pid_t) -> [Int] {
+        let size = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, nil, 0)
+        guard size > 0 else { return [] }
+        var fds = [proc_fdinfo](repeating: proc_fdinfo(), count: Int(size) / MemoryLayout<proc_fdinfo>.size)
+        let got = proc_pidinfo(pid, PROC_PIDLISTFDS, 0, &fds, size)
+        guard got > 0 else { return [] }
+        var ports = Set<Int>()
+        for fd in fds.prefix(Int(got) / MemoryLayout<proc_fdinfo>.size) where fd.proc_fdtype == UInt32(PROX_FDTYPE_SOCKET) {
+            var si = socket_fdinfo()
+            guard proc_pidfdinfo(pid, fd.proc_fd, PROC_PIDFDSOCKETINFO, &si, Int32(MemoryLayout<socket_fdinfo>.size)) > 0,
+                  si.psi.soi_kind == Int32(SOCKINFO_TCP),
+                  si.psi.soi_proto.pri_tcp.tcpsi_state == Int32(TSI_S_LISTEN) else { continue }
+            ports.insert(Int(UInt16(bigEndian: UInt16(truncatingIfNeeded: si.psi.soi_proto.pri_tcp.tcpsi_ini.insi_lport))))
         }
-        return map
+        return ports.sorted()
     }
 
-    /// `[[dd-]hh:]mm:ss` → "3d", "2h 5m", "12m"
-    private static func humanize(etime: String) -> String {
-        var days = 0, rest = etime
-        if let dash = etime.firstIndex(of: "-") {
-            days = Int(etime[..<dash]) ?? 0
-            rest = String(etime[etime.index(after: dash)...])
-        }
-        let parts = rest.split(separator: ":").compactMap { Int($0) }
-        var seconds = days * 86_400
-        for (i, value) in parts.reversed().enumerated() { seconds += value * [1, 60, 3600][min(i, 2)] }
-        return Fmt.duration(TimeInterval(seconds))
-    }
+    /// Framework detection reads package.json; cache it per folder (it rarely changes).
+    private static let frameworkCache = NSCache<NSString, NSString>()
 
     private static let jsFrameworks: [(String, String)] = [
         ("next", "Next.js"), ("nuxt", "Nuxt"), ("astro", "Astro"), ("@sveltejs/kit", "SvelteKit"),
@@ -90,6 +71,14 @@ enum DevServerProvider {
     ]
 
     private static func framework(cwd: String, command: String) -> String? {
+        let key = (cwd + "|" + command) as NSString
+        if let cached = frameworkCache.object(forKey: key) { return cached.length == 0 ? nil : cached as String }
+        let result = detectFramework(cwd: cwd, command: command)
+        frameworkCache.setObject((result ?? "") as NSString, forKey: key)
+        return result
+    }
+
+    private static func detectFramework(cwd: String, command: String) -> String? {
         let pkg = URL(fileURLWithPath: cwd).appendingPathComponent("package.json")
         if let data = try? Data(contentsOf: pkg),
            let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {

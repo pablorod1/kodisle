@@ -77,6 +77,16 @@ Kodisle was designed to be safe to publish and to run on a work machine. See [SE
 - **Passwords** copied from the generator are marked concealed (clipboard managers skip them) and auto-cleared.
 - Everything runs locally. No analytics, no network calls except the ones listed in SECURITY.md.
 
+## Lightweight by design
+
+Kodisle is meant to sit there all day without you noticing it:
+
+- **No processes on a timer** for local data: listening ports come from libproc, Docker from its Engine API socket. GitHub (PRs + CI for all repos) is a single GraphQL call; `git status` only re-runs for repos that changed.
+- **Incremental parsing**: agent transcripts are read backwards and only re-parsed when they change.
+- **On-demand**: Docker and system stats only refresh while they're on screen. Everything pauses while the display sleeps or the Mac is locked.
+- **Quiet rendering**: no endless animations in always-visible places, icons rasterized once at display size, and windows sized to their content (the collapsed island is just the notch).
+- Timers use tolerance so macOS can coalesce wakeups.
+
 ## The Kodisle dock and your macOS Dock
 
 Enabling the Kodisle dock sets the macOS Dock to auto-hide with a very long delay, and remembers your previous settings. They're restored when you disable it or quit Kodisle (including `kill`/logout). If Kodisle is ever force-killed with `kill -9`, run:

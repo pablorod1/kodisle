@@ -148,9 +148,10 @@ final class DockController {
     init() {
         let root = DockView(model: model).kodisleEnvironment()
         model.focusPanel = { [weak self] in self?.panel.makeKey() }
-        panel.contentView = NSHostingView(rootView: root)
-        layout()
+        panel.contentView = OverlayPanel.hosting(root)
+        layout(height: 200)
         panel.orderFrontRegardless()
+        watchSize()
         SystemDock.hide()
         model.revealed = !AppSettings.shared.config.dockAutoHide || Self.forceReveal
 
@@ -166,6 +167,7 @@ final class DockController {
     }
 
     func tearDown() {
+        sizeWatch?.cancel()
         tracker = nil
         observers.forEach(NotificationCenter.default.removeObserver)
         panel.orderOut(nil)
@@ -174,9 +176,46 @@ final class DockController {
 
     private var screen: NSScreen { NSScreen.screens.first ?? NSScreen.main! }
 
-    private func layout() {
+    /// The window is only as tall as it needs to be: bar + magnification/tooltip headroom,
+    /// or the full popover height while a widget panel is open.
+    private var compactHeight: CGFloat {
+        let bar = model.dockFrame.height > 0 ? model.dockFrame.height : 90
+        return min(Self.panelHeight, bar + model.headroom + 24)
+    }
+
+    private func layout(height: CGFloat? = nil) {
         let frame = screen.frame
-        panel.setFrame(NSRect(x: frame.minX, y: frame.minY, width: frame.width, height: Self.panelHeight), display: true)
+        let target = height ?? (model.openPanel == nil ? compactHeight : Self.panelHeight)
+        guard abs(panel.frame.height - target) > 0.5 || panel.frame.width != frame.width || panel.frame.minY != frame.minY else { return }
+        panel.setFrameSafely(NSRect(x: frame.minX, y: frame.minY, width: frame.width, height: target))
+    }
+
+    private var sizeWatch: Task<Void, Never>?
+
+    private func watchSize() {
+        sizeWatch = Task { [weak self] in
+            var wasOpen = false
+            while !Task.isCancelled {
+                guard let self else { return }
+                let open = self.model.openPanel != nil
+                if open {
+                    self.layout(height: Self.panelHeight)
+                } else if wasOpen {
+                    try? await Task.sleep(for: .milliseconds(420))   // let the close animation finish
+                    if self.model.openPanel == nil { self.layout() }
+                } else {
+                    self.layout()
+                }
+                wasOpen = open
+                await withCheckedContinuation { continuation in
+                    withObservationTracking {
+                        _ = self.model.openPanel
+                        _ = self.model.headroom
+                        _ = self.model.dockFrame.height
+                    } onChange: { continuation.resume() }
+                }
+            }
+        }
     }
 
     /// Converts a SwiftUI global rect (top-left origin in the panel) to screen coordinates.

@@ -245,7 +245,7 @@ private struct DownloadRow: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(nsImage: thumbnail ?? NSWorkspace.shared.icon(forFile: item.url.path))
+            Image(nsImage: thumbnail ?? IconCache.icon(forFile: item.url.path, size: 34))
                 .resizable().aspectRatio(contentMode: .fit).frame(width: 34, height: 34)
                 .clipShape(RoundedRectangle(cornerRadius: 6))
             VStack(alignment: .leading, spacing: 1) {

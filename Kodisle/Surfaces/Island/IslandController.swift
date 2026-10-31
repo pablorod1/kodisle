@@ -53,7 +53,7 @@ final class IslandController {
         let root = IslandView(model: model, onExpand: { [weak self] in self?.expand() })
             .environment(\.colorScheme, .dark)
             .kodisleEnvironment()
-        panel.contentView = NSHostingView(rootView: root)
+        panel.contentView = OverlayPanel.hosting(root)
         if let first = AppSettings.shared.config.islandTabs.first { model.selectedTab = first }
         layout()
         panel.orderFrontRegardless()
@@ -91,10 +91,27 @@ final class IslandController {
             let menuBar = screen.frame.maxY - screen.visibleFrame.maxY
             model.notchSize = CGSize(width: 150, height: max(menuBar, 28))
         }
-        let size = CGSize(width: IslandModel.expandedSize.width + IslandModel.shadowMargin.width * 2,
-                          height: IslandModel.expandedSize.height + IslandModel.shadowMargin.height)
-        panel.setFrame(NSRect(x: screen.frame.midX - size.width / 2, y: screen.frame.maxY - size.height,
-                              width: size.width, height: size.height), display: true)
+        fitWindow(large: model.mode != .collapsed)
+    }
+
+    /// Collapsed, the window is just the notch-sized island; it grows before any expansion
+    /// (so animations have room) and shrinks back once the collapse animation is done.
+    private func fitWindow(large: Bool) {
+        let frame = screen.frame
+        let size: CGSize = large
+            ? CGSize(width: IslandModel.expandedSize.width + IslandModel.shadowMargin.width * 2,
+                     height: IslandModel.expandedSize.height + IslandModel.shadowMargin.height)
+            : CGSize(width: model.collapsedSize.width + 16, height: model.collapsedSize.height + 4)
+        let target = NSRect(x: frame.midX - size.width / 2, y: frame.maxY - size.height, width: size.width, height: size.height)
+        panel.setFrameSafely(target)
+    }
+
+    private func shrinkWhenCollapsed() {
+        Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(450))
+            guard let self, self.model.mode == .collapsed else { return }
+            self.fitWindow(large: false)
+        }
     }
 
     /// Screen-space rectangle of the visible island for the current mode.
@@ -149,6 +166,7 @@ final class IslandController {
     func expand(tab: WidgetID? = nil) {
         hoverTask = nil
         if let tab { model.selectedTab = tab }
+        fitWindow(large: true)
         withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) { model.mode = .expanded }
         panel.ignoresMouseEvents = false
         panel.makeKey()
@@ -161,6 +179,7 @@ final class IslandController {
     func collapse() {
         collapseTask = nil
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) { model.mode = restingMode }
+        if model.mode == .collapsed { shrinkWhenCollapsed() }
         panel.resignKey()
         panel.ignoresMouseEvents = !hotRect(for: model.mode).contains(NSEvent.mouseLocation)
     }
@@ -181,7 +200,9 @@ final class IslandController {
                     if event != nil { self.model.bannerHasDetail = event?.detail?.isEmpty == false }
                     let target = self.restingMode
                     if self.model.mode != .expanded, self.model.mode != target {
+                        if target != .collapsed { self.fitWindow(large: true) }
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.78)) { self.model.mode = target }
+                        if target == .collapsed { self.shrinkWhenCollapsed() }
                         if target == .approval { self.panel.ignoresMouseEvents = false }
                     }
                 }

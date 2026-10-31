@@ -30,23 +30,77 @@ enum EndpointProvider {
 // MARK: - Docker
 
 enum DockerProvider {
-    static func fetch() async -> [DockerContainer]? {
-        guard Shell.which("docker") != nil,
-              let result = try? await Shell.run("docker", ["ps", "-a", "--format", "{{json .}}"], timeout: 8), result.ok
-        else { return nil }
-        return result.text.split(separator: "\n").compactMap { line in
-            guard let data = line.data(using: .utf8),
-                  let item = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
-                  let id = item["ID"] as? String else { return nil }
-            return DockerContainer(id: id, name: item["Names"] as? String ?? id, image: item["Image"] as? String ?? "",
-                                   state: item["State"] as? String ?? "", status: item["Status"] as? String ?? "",
-                                   ports: item["Ports"] as? String ?? "")
+    /// Docker Engine API over its Unix socket — no `docker` CLI process per refresh.
+    static var socketPath: String? {
+        let home = NSHomeDirectory()
+        if let host = ProcessInfo.processInfo.environment["DOCKER_HOST"], host.hasPrefix("unix://") {
+            return String(host.dropFirst(7))
         }
-        .sorted { ($0.isRunning ? 0 : 1, $0.name) < ($1.isRunning ? 0 : 1, $1.name) }
+        return [home + "/.docker/run/docker.sock", home + "/.orbstack/run/docker.sock",
+                home + "/.colima/default/docker.sock", "/var/run/docker.sock"]
+            .first { FileManager.default.fileExists(atPath: $0) }
+    }
+
+    static func fetch() async -> [DockerContainer]? {
+        guard let path = socketPath else { return nil }
+        return await Task.detached(priority: .utility) { () -> [DockerContainer]? in
+            guard let body = UnixHTTP.request(socket: path, method: "GET", path: "/containers/json?all=1"),
+                  let items = (try? JSONSerialization.jsonObject(with: body)) as? [[String: Any]] else { return nil }
+            return items.compactMap { item in
+                guard let id = item["Id"] as? String else { return nil }
+                let name = ((item["Names"] as? [String])?.first ?? id).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+                let ports = (item["Ports"] as? [[String: Any]] ?? []).compactMap { p -> String? in
+                    guard let pub = p["PublicPort"] as? Int, let priv = p["PrivatePort"] as? Int else { return nil }
+                    return "\(pub)→\(priv)"
+                }
+                return DockerContainer(id: String(id.prefix(12)), name: name, image: item["Image"] as? String ?? "",
+                                       state: item["State"] as? String ?? "", status: item["Status"] as? String ?? "",
+                                       ports: Array(Set(ports)).sorted().joined(separator: ", "))
+            }
+            .sorted { ($0.isRunning ? 0 : 1, $0.name) < ($1.isRunning ? 0 : 1, $1.name) }
+        }.value
     }
 
     static func perform(_ action: String, id: String) async {
-        _ = try? await Shell.run("docker", [action, id], timeout: 30)
+        guard let path = socketPath else { return }
+        _ = await Task.detached { UnixHTTP.request(socket: path, method: "POST", path: "/containers/\(id)/\(action)", timeout: 30) }.value
+    }
+}
+
+/// Minimal HTTP/1.0 client over a Unix domain socket (used for the Docker API).
+enum UnixHTTP {
+    static func request(socket path: String, method: String, path resource: String, timeout: Int = 5) -> Data? {
+        let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+        guard fd >= 0 else { return nil }
+        defer { close(fd) }
+        var tv = timeval(tv_sec: timeout, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, socklen_t(MemoryLayout<timeval>.size))
+        var noSigPipe: Int32 = 1
+        setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &noSigPipe, socklen_t(MemoryLayout<Int32>.size))
+        var addr = sockaddr_un()
+        addr.sun_family = sa_family_t(AF_UNIX)
+        let bytes = path.utf8CString
+        guard bytes.count <= MemoryLayout.size(ofValue: addr.sun_path) else { return nil }
+        withUnsafeMutableBytes(of: &addr.sun_path) { raw in bytes.withUnsafeBytes { raw.copyMemory(from: $0) } }
+        let ok = withUnsafePointer(to: &addr) {
+            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+        }
+        guard ok == 0 else { return nil }
+        let request = "\(method) \(resource) HTTP/1.0\r\nHost: docker\r\nContent-Length: 0\r\n\r\n"
+        guard request.withCString({ write(fd, $0, strlen($0)) }) > 0 else { return nil }
+        var response = Data()
+        var buffer = [UInt8](repeating: 0, count: 16_384)
+        while true {
+            let n = read(fd, &buffer, buffer.count)
+            if n <= 0 { break }
+            response.append(buffer, count: n)
+            if response.count > 8 << 20 { break }
+        }
+        guard let split = response.range(of: Data("\r\n\r\n".utf8)) else { return nil }
+        let head = String(decoding: response[..<split.lowerBound], as: UTF8.self)
+        guard head.hasPrefix("HTTP/1.") && head.split(separator: " ").dropFirst().first.map({ $0.hasPrefix("2") }) == true else { return nil }
+        return response[split.upperBound...]
     }
 }
 

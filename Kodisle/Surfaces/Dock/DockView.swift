@@ -301,7 +301,7 @@ private struct DockIcon: View {
     @State private var dropTarget = false
 
     var body: some View {
-        Image(nsImage: NSWorkspace.shared.icon(forFile: app.path))
+        Image(nsImage: IconCache.icon(forFile: app.path, size: scale > 1 ? metrics.tile * 2 : metrics.tile))
             .resizable().interpolation(.high)
             .frame(width: metrics.tile * scale, height: metrics.tile * scale)
             .brightness(dropTarget ? 0.15 : 0)
@@ -381,7 +381,7 @@ private struct DockStackIcon: View {
     @State private var hovering = false
 
     var body: some View {
-        Image(nsImage: NSWorkspace.shared.icon(forFile: DownloadsProvider.folder.path))
+        Image(nsImage: IconCache.icon(forFile: DownloadsProvider.folder.path, size: metrics.tile))
             .resizable().frame(width: metrics.tile, height: metrics.tile)
             .scaleEffect(selected ? 1.06 : 1, anchor: .bottom)
             .overlay(alignment: .top) {
@@ -402,7 +402,7 @@ private struct TrashIcon: View {
     }
 
     var body: some View {
-        Image(nsImage: NSImage(named: NSImage.trashEmptyName) ?? NSWorkspace.shared.icon(forFile: trashURL.path))
+        Image(nsImage: IconCache.named(NSImage.trashEmptyName, size: metrics.tile))
             .resizable().frame(width: metrics.tile, height: metrics.tile)
             .scaleEffect(targeted ? 1.15 : 1, anchor: .bottom)
             .overlay(alignment: .top) {

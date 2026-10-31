@@ -146,6 +146,14 @@ enum ISO {
     }
 }
 
+enum FileHead {
+    static func read(_ url: URL, bytes: Int) -> String? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        return (try? handle.read(upToCount: bytes)).map { String(decoding: $0, as: UTF8.self) }
+    }
+}
+
 enum FileTail {
     /// Reads the last `bytes` of a file (used for JSONL logs, never loads whole files).
     static func read(_ url: URL, bytes: Int = 64 * 1024) -> String? {

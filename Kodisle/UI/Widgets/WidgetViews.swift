@@ -8,6 +8,10 @@ struct WidgetTile: View {
     private var calc: CalculatorModel { .shared }
 
     var body: some View {
+        content.trackVisibility(id)
+    }
+
+    @ViewBuilder private var content: some View {
         switch id {
         case .ai:
             TileLayout(title: "AI usage", subtitle: aiSubtitle) {
@@ -26,7 +30,7 @@ struct WidgetTile: View {
                 if running.contains(where: { $0.state == .waiting }) {
                     TileIcon(symbol: "hand.raised.fill", tint: .orange)
                 } else if !running.isEmpty {
-                    TileIcon(symbol: "sparkles", tint: .purple).symbolEffect(.pulse)
+                    TileIcon(symbol: "sparkles", tint: .purple)
                 } else {
                     TileIcon(symbol: "sparkles", tint: .secondary)
                 }
@@ -141,6 +145,10 @@ struct CompactGlyph: View {
     @Environment(KodisleStore.self) private var store
 
     var body: some View {
+        content.trackVisibility(id)
+    }
+
+    private var content: some View {
         HStack(spacing: 5) {
             switch id {
             case .ai, .claude, .codex:
@@ -157,7 +165,7 @@ struct CompactGlyph: View {
                     Image(systemName: "hand.raised.fill").foregroundStyle(.orange)
                     Text("Wait")
                 } else if !running.isEmpty {
-                    Image(systemName: "sparkles").foregroundStyle(.purple).symbolEffect(.pulse)
+                    Image(systemName: "sparkles").foregroundStyle(.purple)
                     Text("\(running.count)")
                 } else {
                     Image(systemName: "sparkles").foregroundStyle(.secondary)
@@ -196,7 +204,9 @@ struct CompactGlyph: View {
 struct WidgetPanel: View {
     let id: WidgetID
 
-    var body: some View {
+    var body: some View { content.trackVisibility(id) }
+
+    @ViewBuilder private var content: some View {
         switch id {
         case .ai, .claude, .codex: AIUsagePanel()
         case .agents: AgentsPanel()
@@ -218,4 +228,12 @@ struct WidgetPanel: View {
 
 extension String {
     func ifEmpty(_ fallback: String) -> String { isEmpty ? fallback : self }
+}
+
+extension View {
+    /// Tells the store a widget is on screen, so on-demand sources only poll while visible.
+    func trackVisibility(_ id: WidgetID) -> some View {
+        onAppear { KodisleStore.shared.widgetAppeared(id) }
+            .onDisappear { KodisleStore.shared.widgetDisappeared(id) }
+    }
 }
