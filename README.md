@@ -53,7 +53,9 @@ Requires macOS 26 (Tahoe) or later. Universal app (Apple Silicon and Intel).
 **Homebrew**
 
 ```sh
-brew install --cask pablorod1/tap/kodisle
+brew tap pablorod1/tap
+brew trust pablorod1/tap        # Homebrew asks you to trust third-party taps once
+brew install --cask kodisle
 ```
 
 **One-line installer** (downloads the latest release, verifies its SHA-256 and installs to `/Applications`; [read it first](install.sh))

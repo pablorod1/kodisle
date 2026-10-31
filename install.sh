@@ -48,15 +48,15 @@ if [ -z "${KODISLE_NO_OPEN:-}" ] && pgrep -x Kodisle >/dev/null 2>&1; then
   sleep 2
 fi
 
-say "Installing to $DEST…"
+say "Installing to ${DEST}…"
 rm -rf "$DEST/Kodisle.app"
 mv "$TMP/app/Kodisle.app" "$DEST/Kodisle.app"
 xattr -dr com.apple.quarantine "$DEST/Kodisle.app" 2>/dev/null || true
 
 VERSION=$(defaults read "$DEST/Kodisle.app/Contents/Info" CFBundleShortVersionString 2>/dev/null || echo "?")
 if [ -n "${KODISLE_NO_OPEN:-}" ]; then
-  say "✓ Kodisle $VERSION installed in $DEST."
+  say "✓ Kodisle ${VERSION} installed in ${DEST}."
 else
-  say "✓ Kodisle $VERSION installed. Opening…"
+  say "✓ Kodisle ${VERSION} installed. Opening…"
   open "$DEST/Kodisle.app"
 fi
