@@ -29,16 +29,13 @@ final class OverlayPanel: NSPanel {
 
     /// Hosting view that never resizes the window itself: the controllers size these panels.
     /// (With the default sizing options SwiftUI resizes the window mid-layout and AppKit aborts.)
-    /// The hosting view lives inside a plain container so it is never the window's content view
-    /// (SwiftUI only drives the window frame from a content-view hosting view).
-    static func hosting<Content: View>(_ root: Content) -> NSView {
+    /// Hosts SwiftUI at a **fixed size**, anchored to the top-centre or the bottom of the window.
+    /// The window only crops it, so resizing the window never moves or re-lays out the content
+    /// (otherwise the island would slide in from the side while the window grows).
+    static func hosting<Content: View>(_ root: Content, size: CGSize, anchor: AnchoredContainer.Anchor) -> AnchoredContainer {
         let hosting = NSHostingView(rootView: root)
         hosting.sizingOptions = []
-        let container = NSView(frame: NSRect(x: 0, y: 0, width: 100, height: 100))
-        hosting.frame = container.bounds
-        hosting.autoresizingMask = [.width, .height]
-        container.addSubview(hosting)
-        return container
+        return AnchoredContainer(content: hosting, size: size, anchor: anchor)
     }
 
     /// Frame changes are deferred to the next run-loop turn so they never happen mid-layout.
@@ -96,5 +93,50 @@ struct KodisleRoot<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
         content.redacted(reason: settings.config.privacyMode ? .privacy : [])
+    }
+}
+
+/// Window content view that keeps its single subview at a fixed size and anchor.
+final class AnchoredContainer: NSView {
+    enum Anchor { case topCenter, bottomFullWidth }
+    let content: NSView
+    var contentSize: CGSize { didSet { needsLayout = true } }
+    let anchor: Anchor
+
+    init(content: NSView, size: CGSize, anchor: Anchor) {
+        self.content = content
+        self.contentSize = size
+        self.anchor = anchor
+        super.init(frame: NSRect(origin: .zero, size: size))
+        content.translatesAutoresizingMaskIntoConstraints = true
+        content.autoresizingMask = []
+        addSubview(content)
+        place()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+    override func layout() {
+        super.layout()
+        place()
+    }
+
+    override func resizeSubviews(withOldSize oldSize: NSSize) { place() }
+
+    private func place() {
+        let target: NSRect = switch anchor {
+        case .topCenter:
+            NSRect(x: ((bounds.width - contentSize.width) / 2).rounded(), y: bounds.height - contentSize.height,
+                   width: contentSize.width, height: contentSize.height)
+        case .bottomFullWidth:
+            NSRect(x: 0, y: 0, width: bounds.width, height: contentSize.height)
+        }
+        if content.frame != target { content.frame = target }
+    }
+
+    /// Top edge of the hosted content in screen coordinates (SwiftUI's global origin).
+    var contentTopInScreen: CGFloat {
+        guard let window else { return 0 }
+        return window.frame.minY + content.frame.maxY
     }
 }

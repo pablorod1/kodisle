@@ -139,6 +139,7 @@ final class DockController {
     let model = DockModel()
     private let panel = OverlayPanel(level: .statusBar, joinsFullScreen: false)
     private var tracker: MouseTracker?
+    private weak var container: AnchoredContainer?
     private var observers: [NSObjectProtocol] = []
     private var hideTask: Task<Void, Never>?
     private static let panelHeight: CGFloat = 640
@@ -148,7 +149,9 @@ final class DockController {
     init() {
         let root = DockView(model: model).kodisleEnvironment()
         model.focusPanel = { [weak self] in self?.panel.makeKey() }
-        panel.contentView = OverlayPanel.hosting(root)
+        let host = OverlayPanel.hosting(root, size: CGSize(width: screen.frame.width, height: Self.panelHeight), anchor: .bottomFullWidth)
+        panel.contentView = host
+        container = host
         layout(height: 200)
         panel.orderFrontRegardless()
         watchSize()
@@ -219,8 +222,11 @@ final class DockController {
     }
 
     /// Converts a SwiftUI global rect (top-left origin in the panel) to screen coordinates.
+    /// SwiftUI global coordinates are relative to the fixed-size hosted content, whose top edge
+    /// sits `panelHeight` above the window bottom (the window itself may be shorter).
     private func toScreen(_ rect: CGRect) -> NSRect {
-        NSRect(x: panel.frame.minX + rect.minX, y: panel.frame.maxY - rect.maxY, width: rect.width, height: rect.height)
+        let top = container?.contentTopInScreen ?? panel.frame.maxY
+        return NSRect(x: panel.frame.minX + rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height)
     }
 
     private func mouseMoved(_ point: NSPoint) {

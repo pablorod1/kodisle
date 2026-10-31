@@ -55,7 +55,9 @@ final class IslandController {
         let root = IslandView(model: model, onExpand: { [weak self] in self?.expand() })
             .environment(\.colorScheme, .dark)
             .kodisleEnvironment()
-        panel.contentView = OverlayPanel.hosting(root)
+        panel.contentView = OverlayPanel.hosting(root, size: CGSize(width: IslandModel.expandedSize.width + IslandModel.shadowMargin.width * 2,
+                                                                    height: IslandModel.expandedSize.height + IslandModel.shadowMargin.height),
+                                                  anchor: .topCenter)
         if let first = AppSettings.shared.config.islandTabs.first { model.selectedTab = first }
         layout()
         panel.orderFrontRegardless()
