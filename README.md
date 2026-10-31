@@ -18,7 +18,7 @@ live widget tiles, and a menu bar panel.
 
 | Surface | What it does |
 | --- | --- |
-| **Dynamic island** | Lives around the notch (or a pill on screens without one). Two glyphs flank the notch (e.g. Claude 5h % and running agents). Hover to expand into tabs; live activities pop up when something happens. |
+| **Dynamic island** | Lives around the notch (or a pill on screens without one). The left glyph is your pick (e.g. Claude 5h %); the right one automatically shows what's active — approvals, focus timer, agents, deploys, CI, dev servers — rotating when several are. Hover to expand into tabs; live activities pop up when something happens. |
 | **Kodisle dock** *(opt-in)* | Replaces the macOS Dock: your pinned and running apps, live widget tiles with paging, a Downloads stack and the Trash. Click a tile for its full panel. |
 | **Menu bar** | Every widget in a compact panel. Shows your current AI usage next to the icon. |
 | **Dock badge** | If you keep the macOS Dock, Kodisle can live there with a badge counting failing CI, review requests, endpoints down and agents waiting. |

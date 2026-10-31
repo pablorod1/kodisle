@@ -172,11 +172,25 @@ struct CompactGlyph: View {
                 }
             case .devServers:
                 Image(systemName: "server.rack").foregroundStyle(store.devServers.isEmpty ? .secondary : Color.green)
-                Text("\(store.devServers.count)")
+                if store.devServers.count == 1, let port = store.devServers.first?.ports.first {
+                    Text(verbatim: ":\(port)").monospacedDigit()
+                } else {
+                    Text("\(store.devServers.count)")
+                }
             case .github:
                 let failing = store.github?.failingRuns.count ?? 0
-                Image(systemName: failing > 0 ? "xmark.octagon.fill" : "checkmark.circle.fill").foregroundStyle(failing > 0 ? .red : .green)
-                Text("\(store.github?.reviewRequests.count ?? 0)")
+                let running = store.github?.runs.contains { $0.status != "completed" && ($0.updatedAt ?? .distantPast) > Date().addingTimeInterval(-1800) } ?? false
+                if running {
+                    Image(systemName: "arrow.triangle.2.circlepath").foregroundStyle(.orange)
+                    Text("CI")
+                } else {
+                    Image(systemName: failing > 0 ? "xmark.octagon.fill" : "checkmark.circle.fill").foregroundStyle(failing > 0 ? .red : .green)
+                    Text("\(store.github?.reviewRequests.count ?? 0)")
+                }
+            case .vercel:
+                let active = store.deployments.first(where: \.isActive)
+                Image(systemName: "triangle.fill").foregroundStyle(active == nil ? Color.white : .orange)
+                Text(active == nil ? (store.deployments.first?.state.capitalized ?? "—") : "Deploy")
             case .endpoints:
                 let down = store.endpointStatus.values.filter { !$0.ok }.count
                 StatusDot(color: down > 0 ? .red : .green)

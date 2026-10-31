@@ -79,11 +79,26 @@ struct IslandView: View {
                 .frame(width: IslandModel.earWidth - 8, alignment: .leading)
                 .padding(.leading, 10)
             Spacer(minLength: model.notchSize.width)
-            CompactGlyph(id: settings.config.islandRight)
-                .frame(width: IslandModel.earWidth - 8, alignment: .trailing)
-                .padding(.trailing, 10)
+            ZStack(alignment: .trailing) {
+                CompactGlyph(id: rightEar)
+                    .id(rightEar)
+                    .transition(.push(from: .bottom))
+            }
+            .frame(width: IslandModel.earWidth - 8, height: model.notchSize.height, alignment: .trailing)
+            .clipped()
+            .padding(.trailing, 10)
+            .animation(.spring(response: 0.45, dampingFraction: 0.85), value: rightEar)
         }
         .opacity(model.mode == .expanded ? 0 : 1)
+    }
+
+    /// Automatic right ear: whatever is active (rotating when several are), else the user's pick.
+    private var rightEar: WidgetID {
+        let config = settings.config
+        guard config.islandAutoEars else { return config.islandRight }
+        let active = store.activeWidgets.filter { $0 != config.islandLeft }
+        guard !active.isEmpty else { return config.islandRight }
+        return active[model.earTick % active.count]
     }
 
     @ViewBuilder
@@ -247,26 +262,29 @@ private struct IslandSurface: View {
     let notchHeight: CGFloat
 
     var body: some View {
+        // Every layer always exists and only its opacity changes, so all of them follow the
+        // island's size animation (inserting the glass on open made it pop in at full size).
         ZStack {
-            if open {
-                Color.clear
-                    .glassEffect(.regular.tint(.black.opacity(0.78)), in: shape)
-                // Fuse with the notch: opaque black at the top, fading into the glass.
-                shape.fill(LinearGradient(stops: [
-                    .init(color: .black, location: 0),
-                    .init(color: .black, location: min(0.45, notchHeight / 260)),
-                    .init(color: .black.opacity(0.55), location: 0.75),
-                    .init(color: .black.opacity(0.35), location: 1),
-                ], startPoint: .top, endPoint: .bottom))
-                // Specular rim, only on the lower edges (the top is the notch).
-                shape.stroke(LinearGradient(stops: [
-                    .init(color: .white.opacity(0), location: 0),
-                    .init(color: .white.opacity(0), location: 0.35),
-                    .init(color: .white.opacity(0.22), location: 1),
-                ], startPoint: .top, endPoint: .bottom), lineWidth: 1)
-            } else {
-                shape.fill(.black)
-            }
+            shape.fill(.black)
+                .opacity(open ? 0 : 1)
+            Color.clear
+                .glassEffect(.regular.tint(.black.opacity(0.78)), in: shape)
+                .opacity(open ? 1 : 0)
+            // Fuse with the notch: opaque black at the top, fading into the glass.
+            shape.fill(LinearGradient(stops: [
+                .init(color: .black, location: 0),
+                .init(color: .black, location: min(0.45, notchHeight / 260)),
+                .init(color: .black.opacity(0.55), location: 0.75),
+                .init(color: .black.opacity(0.35), location: 1),
+            ], startPoint: .top, endPoint: .bottom))
+            .opacity(open ? 1 : 0)
+            // Specular rim, only on the lower edges (the top is the notch).
+            shape.stroke(LinearGradient(stops: [
+                .init(color: .white.opacity(0), location: 0),
+                .init(color: .white.opacity(0), location: 0.35),
+                .init(color: .white.opacity(0.22), location: 1),
+            ], startPoint: .top, endPoint: .bottom), lineWidth: 1)
+            .opacity(open ? 1 : 0)
         }
         // Ambient + contact shadow.
         .shadow(color: .black.opacity(open ? 0.45 : 0), radius: 30, y: 18)

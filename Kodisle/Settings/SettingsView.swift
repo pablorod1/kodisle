@@ -158,9 +158,12 @@ private struct IslandSettings: View {
                 Picker("Left", selection: $settings.config.islandLeft) {
                     ForEach(WidgetID.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
                 }
-                Picker("Right", selection: $settings.config.islandRight) {
+                Picker(settings.config.islandAutoEars ? "Right (when nothing is active)" : "Right", selection: $settings.config.islandRight) {
                     ForEach(WidgetID.allCases) { Label($0.title, systemImage: $0.symbol).tag($0) }
                 }
+                Toggle("Show what's active on the right automatically", isOn: $settings.config.islandAutoEars)
+                Text("Approvals, focus timer, agents working, deploys, CI, endpoints down and dev servers. Rotates every 4 s when several are active.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             Section("Tabs (also used by the menu bar)") {
                 WidgetOrderEditor(selection: $settings.config.islandTabs,

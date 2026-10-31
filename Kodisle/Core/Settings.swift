@@ -9,6 +9,7 @@ struct KodisleConfig: Codable, Equatable {
     var islandEnabled = true
     var islandExpandOnHover = true
     var islandLiveEvents = true
+    var islandAutoEars = true
     var islandLeft: WidgetID = .claude
     var islandRight: WidgetID = .agents
     var islandTabs: [WidgetID] = [.ai, .agents, .devServers, .github, .vercel, .clipboard, .endpoints, .generator, .downloads]

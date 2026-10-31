@@ -470,4 +470,19 @@ final class KodisleStore {
     }
 
     var runningAgents: [AgentSession] { agents.filter { $0.state != .finished } }
+
+    /// Widgets with something going on right now, most urgent first (drives the island's
+    /// automatic right ear).
+    var activeWidgets: [WidgetID] {
+        var result: [WidgetID] = []
+        func add(_ id: WidgetID) { if !result.contains(id) { result.append(id) } }
+        if !permissionRequests.isEmpty || agents.contains(where: { $0.state == .waiting }) { add(.agents) }
+        if FocusTimer.shared.isRunning { add(.timer) }
+        if agents.contains(where: { $0.state == .working }) { add(.agents) }
+        if deployments.contains(where: \.isActive) { add(.vercel) }
+        if github?.runs.contains(where: { $0.status != "completed" && ($0.updatedAt ?? .distantPast) > Date().addingTimeInterval(-1800) }) == true { add(.github) }
+        if endpointStatus.values.contains(where: { !$0.ok }) { add(.endpoints) }
+        if !devServers.isEmpty { add(.devServers) }
+        return result
+    }
 }

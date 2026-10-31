@@ -12,6 +12,8 @@ final class IslandModel {
     var pinned = false
     /// The current banner shows a multi-line detail (e.g. an agent's summary).
     var bannerHasDetail = false
+    /// Advances every few seconds to rotate the automatic right ear.
+    var earTick = 0
 
     static let earWidth: CGFloat = 78
     static let expandedSize = CGSize(width: 680, height: 440)
@@ -68,10 +70,28 @@ final class IslandController {
             MainActor.assumeIsolated { self?.layout() }
         })
         watchEvents()
+        rotateEars()
+    }
+
+    private var earRotation: Task<Void, Never>?
+
+    /// Rotates the right ear between active widgets (only while collapsed and with 2+ items).
+    private func rotateEars() {
+        earRotation = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(4), tolerance: .seconds(1))
+                guard let self else { return }
+                let config = AppSettings.shared.config
+                let candidates = KodisleStore.shared.activeWidgets.filter { $0 != config.islandLeft }
+                guard config.islandAutoEars, candidates.count > 1, self.model.mode == .collapsed else { continue }
+                withAnimation(.spring(response: 0.45, dampingFraction: 0.85)) { self.model.earTick += 1 }
+            }
+        }
     }
 
     func tearDown() {
         eventWatch?.cancel()
+        earRotation?.cancel()
         tracker = nil
         observers.forEach(NotificationCenter.default.removeObserver)
         panel.orderOut(nil)
