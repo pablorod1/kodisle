@@ -1,0 +1,21 @@
+# Build
+build/
+DerivedData/
+*.xcodeproj/
+!*.xcodeproj/project.xcworkspace/
+*.xcworkspace/xcuserdata/
+xcuserdata/
+*.zip
+*.dmg
+
+# Secrets — never commit these
+.env
+.env.*
+*.pem
+*.p12
+*.mobileprovision
+*.xcconfig.local
+Secrets.swift
+
+# macOS
+.DS_Store

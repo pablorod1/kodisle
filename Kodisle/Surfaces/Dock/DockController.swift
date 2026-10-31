@@ -1,0 +1,228 @@
+import AppKit
+import Observation
+import SwiftUI
+
+struct DockApp: Identifiable, Equatable {
+    var id: String { path }
+    let path: String
+    var name: String
+    var isRunning: Bool
+    var isPinned: Bool
+    var isActive: Bool
+}
+
+@MainActor @Observable
+final class DockModel {
+    var apps: [DockApp] = []
+    var openPanel: WidgetID?
+    var panelAnchorX: CGFloat = 0
+    var dockFrame: CGRect = .zero
+    var panelFrame: CGRect = .zero
+    var revealed = true
+    var page = 0
+    /// Extra space above the bar that magnified icons and tooltips occupy (still interactive).
+    var headroom: CGFloat = 0
+    /// Item being dragged inside the dock (for live reordering).
+    var draggingApp: String? { didSet { if draggingApp != nil { watchDragEnd() } } }
+    var draggingWidget: WidgetID? { didSet { if draggingWidget != nil { watchDragEnd() } } }
+
+    /// Drops outside the dock never call the drop delegate: clear the drag once the button is up.
+    private func watchDragEnd() {
+        Task { @MainActor [weak self] in
+            while NSEvent.pressedMouseButtons & 1 != 0 { try? await Task.sleep(for: .milliseconds(120)) }
+            try? await Task.sleep(for: .milliseconds(150))
+            self?.draggingApp = nil
+            self?.draggingWidget = nil
+        }
+    }
+
+    static let finderPath = "/System/Library/CoreServices/Finder.app"
+
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored var focusPanel: (() -> Void)?
+
+    init() {
+        let center = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.didLaunchApplicationNotification, NSWorkspace.didTerminateApplicationNotification,
+                     NSWorkspace.didActivateApplicationNotification] {
+            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refresh() }
+            })
+        }
+        refresh()
+    }
+
+    var pinnedPaths: [String] {
+        get {
+            if let saved = AppSettings.shared.config.dockPinnedApps { return saved }
+            let imported = SystemDock.pinnedApps().filter { $0 != Self.finderPath }
+            AppSettings.shared.config.dockPinnedApps = imported
+            return imported
+        }
+        set { AppSettings.shared.config.dockPinnedApps = newValue }
+    }
+
+    func refresh() {
+        let running = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
+        let runningPaths = Dictionary(running.compactMap { app in app.bundleURL.map { ($0.path, app) } }, uniquingKeysWith: { a, _ in a })
+        let frontmost = NSWorkspace.shared.frontmostApplication?.bundleURL?.path
+
+        func make(_ path: String, pinned: Bool) -> DockApp {
+            DockApp(path: path, name: FileManager.default.displayName(atPath: path).replacingOccurrences(of: ".app", with: ""),
+                    isRunning: runningPaths[path] != nil || path == Self.finderPath, isPinned: pinned, isActive: path == frontmost)
+        }
+        var result = [make(Self.finderPath, pinned: true)]
+        let pinned = pinnedPaths.filter { FileManager.default.fileExists(atPath: $0) }
+        result += pinned.map { make($0, pinned: true) }
+        let extra = running.compactMap(\.bundleURL?.path)
+            .filter { $0 != Self.finderPath && !pinned.contains($0) && $0 != Bundle.main.bundlePath }
+        result += extra.map { make($0, pinned: false) }
+        if result != apps { apps = result }
+    }
+
+    func runningApp(_ app: DockApp) -> NSRunningApplication? {
+        NSWorkspace.shared.runningApplications.first { $0.bundleURL?.path == app.path }
+    }
+
+    func launch(_ app: DockApp) {
+        if app.path == Self.finderPath {
+            NSWorkspace.shared.open(URL(fileURLWithPath: NSHomeDirectory()))
+            return
+        }
+        if let running = runningApp(app) {
+            if running.isActive { running.hide() } else { running.unhide(); running.activate() }
+        } else {
+            NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: app.path), configuration: NSWorkspace.OpenConfiguration())
+        }
+    }
+
+    func togglePin(_ app: DockApp) {
+        var paths = pinnedPaths
+        if let index = paths.firstIndex(of: app.path) { paths.remove(at: index) } else { paths.append(app.path) }
+        pinnedPaths = paths
+        refresh()
+    }
+
+    /// Moves (or pins) `path` so it sits where `target` is. Finder always stays first.
+    func move(_ path: String, to target: DockApp) {
+        guard path != target.path, path != Self.finderPath else { return }
+        var paths = pinnedPaths
+        paths.removeAll { $0 == path }
+        if target.path == Self.finderPath {
+            paths.insert(path, at: 0)
+        } else if let index = paths.firstIndex(of: target.path) {
+            let from = pinnedPaths.firstIndex(of: path) ?? Int.max
+            paths.insert(path, at: from < pinnedPaths.firstIndex(of: target.path) ?? 0 ? index + 1 : index)
+        } else {
+            paths.append(path)
+        }
+        pinnedPaths = paths
+        refresh()
+    }
+
+    func moveWidget(_ id: WidgetID, to target: WidgetID) {
+        var list = AppSettings.shared.config.dockWidgets
+        guard id != target, let from = list.firstIndex(of: id), let to = list.firstIndex(of: target) else { return }
+        list.remove(at: from)
+        list.insert(id, at: to)
+        AppSettings.shared.config.dockWidgets = list
+    }
+
+    func open(_ urls: [URL], with app: DockApp) {
+        NSWorkspace.shared.open(urls, withApplicationAt: URL(fileURLWithPath: app.path), configuration: NSWorkspace.OpenConfiguration())
+    }
+}
+
+/// Owns the dock panel at the bottom of the main screen.
+@MainActor
+final class DockController {
+    let model = DockModel()
+    private let panel = OverlayPanel(level: .statusBar, joinsFullScreen: false)
+    private var tracker: MouseTracker?
+    private var observers: [NSObjectProtocol] = []
+    private var hideTask: Task<Void, Never>?
+    private static let panelHeight: CGFloat = 640
+    /// Set by the `-KodisleDebugDock` launch argument: keeps the dock visible for screenshots.
+    static var forceReveal = false
+
+    init() {
+        let root = DockView(model: model).kodisleEnvironment()
+        model.focusPanel = { [weak self] in self?.panel.makeKey() }
+        panel.contentView = NSHostingView(rootView: root)
+        layout()
+        panel.orderFrontRegardless()
+        SystemDock.hide()
+        model.revealed = !AppSettings.shared.config.dockAutoHide || Self.forceReveal
+
+        tracker = MouseTracker(onMove: { [weak self] point in
+            MainActor.assumeIsolated { self?.mouseMoved(point) }
+        }, onClick: { [weak self] point in
+            MainActor.assumeIsolated { self?.outsideClick(point) }
+        })
+        observers.append(NotificationCenter.default.addObserver(
+            forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { self?.layout() }
+        })
+    }
+
+    func tearDown() {
+        tracker = nil
+        observers.forEach(NotificationCenter.default.removeObserver)
+        panel.orderOut(nil)
+        SystemDock.restore()
+    }
+
+    private var screen: NSScreen { NSScreen.screens.first ?? NSScreen.main! }
+
+    private func layout() {
+        let frame = screen.frame
+        panel.setFrame(NSRect(x: frame.minX, y: frame.minY, width: frame.width, height: Self.panelHeight), display: true)
+    }
+
+    /// Converts a SwiftUI global rect (top-left origin in the panel) to screen coordinates.
+    private func toScreen(_ rect: CGRect) -> NSRect {
+        NSRect(x: panel.frame.minX + rect.minX, y: panel.frame.maxY - rect.maxY, width: rect.width, height: rect.height)
+    }
+
+    private func mouseMoved(_ point: NSPoint) {
+        var bar = toScreen(model.dockFrame)
+        bar.size.height += model.headroom
+        var rects = [bar]
+        if model.openPanel != nil { rects.append(toScreen(model.panelFrame)) }
+        let inside = rects.contains { $0.insetBy(dx: -2, dy: -2).contains(point) }
+        panel.ignoresMouseEvents = !inside || !model.revealed
+
+        guard AppSettings.shared.config.dockAutoHide, !Self.forceReveal else {
+            if !model.revealed { withAnimation(.snappy) { model.revealed = true } }
+            return
+        }
+        let atEdge = point.y <= screen.frame.minY + 3 && screen.frame.contains(NSPoint(x: point.x, y: screen.frame.minY + 1))
+        if atEdge && !model.revealed {
+            hideTask?.cancel(); hideTask = nil
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { model.revealed = true }
+        } else if model.revealed && !inside && model.openPanel == nil {
+            let near = rects.contains { $0.insetBy(dx: -30, dy: -30).contains(point) }
+            if !near, hideTask == nil {
+                hideTask = Task { [weak self] in
+                    try? await Task.sleep(for: .milliseconds(500))
+                    guard !Task.isCancelled, let self else { return }
+                    withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) { self.model.revealed = false }
+                    self.hideTask = nil
+                }
+            }
+        } else if inside {
+            hideTask?.cancel(); hideTask = nil
+        }
+    }
+
+    private func outsideClick(_ point: NSPoint) {
+        guard model.openPanel != nil else { return }
+        let inside = [toScreen(model.dockFrame), toScreen(model.panelFrame)].contains { $0.contains(point) }
+        if !inside {
+            withAnimation(.snappy) { model.openPanel = nil }
+            panel.resignKey()
+        }
+    }
+
+    func focusPanel() { panel.makeKey() }
+}
