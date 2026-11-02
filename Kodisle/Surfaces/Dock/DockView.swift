@@ -15,6 +15,10 @@ struct DockMetrics {
 }
 
 struct DockView: View {
+    /// Spans the whole fixed-size hosted content. `.global` is relative to the *window*, which is
+    /// shorter than the content (it only crops it), so frames reported to the controller use this.
+    static let space = "kodisle.dock"
+
     @Bindable var model: DockModel
     @Environment(AppSettings.self) private var settings
     @Environment(\.colorScheme) private var colorScheme
@@ -73,6 +77,7 @@ struct DockView: View {
                         .offset(y: model.revealed ? 0 : m.height + 30)
             }
             .frame(width: geo.size.width, height: geo.size.height)
+            .coordinateSpace(name: DockView.space)
             .onAppear { availableWidth = geo.size.width }
             .onChange(of: geo.size.width) { _, width in availableWidth = width }
         }
@@ -111,7 +116,7 @@ struct DockView: View {
                 .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
                 .allowsHitTesting(false)
         }
-        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }, action: { model.dockFrame = $0 })
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(DockView.space)) }, action: { model.dockFrame = $0 })
         .onAppear { model.headroom = m.tile * (peak - 1) + 44 }
         .onChange(of: peak) { _, value in model.headroom = m.tile * (value - 1) + 44 }
     }
@@ -151,7 +156,7 @@ struct DockView: View {
                 .allowsHitTesting(false)
         }
         .shadow(color: .black.opacity(0.22), radius: 24, y: 10)
-        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }, action: { model.panelFrame = $0 })
+        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(DockView.space)) }, action: { model.panelFrame = $0 })
         .offset(x: x - containerWidth / 2)
     }
 }

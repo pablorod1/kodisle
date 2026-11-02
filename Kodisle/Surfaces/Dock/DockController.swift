@@ -221,9 +221,9 @@ final class DockController {
         }
     }
 
-    /// Converts a SwiftUI global rect (top-left origin in the panel) to screen coordinates.
-    /// SwiftUI global coordinates are relative to the fixed-size hosted content, whose top edge
-    /// sits `panelHeight` above the window bottom (the window itself may be shorter).
+    /// Converts a rect in `DockView.space` (top-left origin of the fixed-size hosted content) to
+    /// screen coordinates. The content's top edge sits `panelHeight` above the window bottom
+    /// (the window itself may be shorter, so SwiftUI's window-relative `.global` would be off).
     private func toScreen(_ rect: CGRect) -> NSRect {
         let top = container?.contentTopInScreen ?? panel.frame.maxY
         return NSRect(x: panel.frame.minX + rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height)
@@ -242,9 +242,13 @@ final class DockController {
             return
         }
         let atEdge = point.y <= screen.frame.minY + 3 && screen.frame.contains(NSPoint(x: point.x, y: screen.frame.minY + 1))
-        if atEdge && !model.revealed {
+        if atEdge {
+            // Resting on the edge keeps the dock up; otherwise it would hide and immediately
+            // re-reveal in a loop whenever the cursor sits outside the bar's rect.
             hideTask?.cancel(); hideTask = nil
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { model.revealed = true }
+            if !model.revealed {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { model.revealed = true }
+            }
         } else if model.revealed && !inside && model.openPanel == nil {
             let near = rects.contains { $0.insetBy(dx: -30, dy: -30).contains(point) }
             if !near, hideTask == nil {
