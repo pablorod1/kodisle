@@ -90,10 +90,13 @@ final class DockModel {
             return
         }
         if let running = runningApp(app) {
-            if running.isActive { running.hide() } else { running.unhide(); running.activate() }
-        } else {
-            NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: app.path), configuration: NSWorkspace.OpenConfiguration())
+            if running.isActive { running.hide(); return }
+            running.unhide()
         }
+        // Like the system Dock, go through Launch Services even when the app is already running:
+        // it activates the app and sends a "reopen" event, so apps with no open windows create one
+        // (e.g. Brave running in the background only to host an installed web app).
+        NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: app.path), configuration: NSWorkspace.OpenConfiguration())
     }
 
     func togglePin(_ app: DockApp) {
