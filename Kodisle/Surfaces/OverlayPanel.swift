@@ -133,10 +133,4 @@ final class AnchoredContainer: NSView {
         }
         if content.frame != target { content.frame = target }
     }
-
-    /// Top edge of the hosted content in screen coordinates (SwiftUI's global origin).
-    var contentTopInScreen: CGFloat {
-        guard let window else { return 0 }
-        return window.frame.minY + content.frame.maxY
-    }
 }

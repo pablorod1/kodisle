@@ -19,6 +19,14 @@ struct DockView: View {
     /// shorter than the content (it only crops it), so frames reported to the controller use this.
     static let space = "kodisle.dock"
 
+    /// Reports `rect` (in `space`) with a bottom-left origin: `minY` is the distance from the
+    /// bottom of the space. The dock is anchored to the bottom of the window, so this stays right
+    /// even if the space's height or top edge is off (seen right after login, when SwiftUI laid the
+    /// reader out ~430pt shorter than the content and the hover rect sat far above the real dock).
+    static func bottomUp(_ rect: CGRect, spaceHeight: CGFloat) -> CGRect {
+        CGRect(x: rect.minX, y: spaceHeight - rect.maxY, width: rect.width, height: rect.height)
+    }
+
     @Bindable var model: DockModel
     @Environment(AppSettings.self) private var settings
     @Environment(\.colorScheme) private var colorScheme
@@ -68,11 +76,11 @@ struct DockView: View {
             ZStack(alignment: .bottom) {
                     Color.clear
                     if let open = model.openPanel {
-                        popover(open, containerWidth: geo.size.width)
+                        popover(open, containerWidth: geo.size.width, spaceHeight: geo.size.height)
                             .padding(.bottom, m.height + 18)
                             .transition(.scale(scale: 0.9, anchor: .bottom).combined(with: .opacity))
                     }
-                    bar(m, perPage: perPage)
+                    bar(m, perPage: perPage, spaceHeight: geo.size.height)
                         .padding(.bottom, 4)
                         .offset(y: model.revealed ? 0 : m.height + 30)
             }
@@ -81,11 +89,13 @@ struct DockView: View {
             .onAppear { availableWidth = geo.size.width }
             .onChange(of: geo.size.width) { _, width in availableWidth = width }
         }
+        // The window only crops the hosted content; never let a window-derived safe area inset it.
+        .ignoresSafeArea()
     }
 
     // MARK: Bar
 
-    private func bar(_ m: DockMetrics, perPage: Int) -> some View {
+    private func bar(_ m: DockMetrics, perPage: Int, spaceHeight: CGFloat) -> some View {
         let peak = maxScale(tile: m.tile)
         let shape = RoundedRectangle(cornerRadius: m.radius, style: .continuous)
         return HStack(alignment: .bottom, spacing: m.spacing) {
@@ -116,7 +126,8 @@ struct DockView: View {
                 .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
                 .allowsHitTesting(false)
         }
-        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(DockView.space)) }, action: { model.dockFrame = $0 })
+        .onGeometryChange(for: CGRect.self, of: { DockView.bottomUp($0.frame(in: .named(DockView.space)), spaceHeight: spaceHeight) },
+                          action: { model.dockFrame = $0 })
         .onAppear { model.headroom = m.tile * (peak - 1) + 44 }
         .onChange(of: peak) { _, value in model.headroom = m.tile * (value - 1) + 44 }
     }
@@ -138,7 +149,7 @@ struct DockView: View {
 
     // MARK: Popover
 
-    private func popover(_ id: WidgetID, containerWidth: CGFloat) -> some View {
+    private func popover(_ id: WidgetID, containerWidth: CGFloat, spaceHeight: CGFloat) -> some View {
         let width: CGFloat = id == .downloads ? 380 : 400
         let x = min(max(model.panelAnchorX, width / 2 + 12), containerWidth - width / 2 - 12)
         let shape = RoundedRectangle(cornerRadius: 30, style: .continuous)
@@ -156,7 +167,8 @@ struct DockView: View {
                 .allowsHitTesting(false)
         }
         .shadow(color: .black.opacity(0.22), radius: 24, y: 10)
-        .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .named(DockView.space)) }, action: { model.panelFrame = $0 })
+        .onGeometryChange(for: CGRect.self, of: { DockView.bottomUp($0.frame(in: .named(DockView.space)), spaceHeight: spaceHeight) },
+                          action: { model.panelFrame = $0 })
         .offset(x: x - containerWidth / 2)
     }
 }

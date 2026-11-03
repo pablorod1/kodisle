@@ -142,7 +142,6 @@ final class DockController {
     let model = DockModel()
     private let panel = OverlayPanel(level: .statusBar, joinsFullScreen: false)
     private var tracker: MouseTracker?
-    private weak var container: AnchoredContainer?
     private var observers: [NSObjectProtocol] = []
     private var hideTask: Task<Void, Never>?
     private static let panelHeight: CGFloat = 640
@@ -154,7 +153,6 @@ final class DockController {
         model.focusPanel = { [weak self] in self?.panel.makeKey() }
         let host = OverlayPanel.hosting(root, size: CGSize(width: screen.frame.width, height: Self.panelHeight), anchor: .bottomFullWidth)
         panel.contentView = host
-        container = host
         layout(height: 200)
         panel.orderFrontRegardless()
         watchSize()
@@ -224,12 +222,10 @@ final class DockController {
         }
     }
 
-    /// Converts a rect in `DockView.space` (top-left origin of the fixed-size hosted content) to
-    /// screen coordinates. The content's top edge sits `panelHeight` above the window bottom
-    /// (the window itself may be shorter, so SwiftUI's window-relative `.global` would be off).
+    /// Converts a frame reported by `DockView` (bottom-left origin, see `DockView.bottomUp`) to
+    /// screen coordinates. The hosted content is anchored to the window's bottom edge.
     private func toScreen(_ rect: CGRect) -> NSRect {
-        let top = container?.contentTopInScreen ?? panel.frame.maxY
-        return NSRect(x: panel.frame.minX + rect.minX, y: top - rect.maxY, width: rect.width, height: rect.height)
+        NSRect(x: panel.frame.minX + rect.minX, y: panel.frame.minY + rect.minY, width: rect.width, height: rect.height)
     }
 
     private func mouseMoved(_ point: NSPoint) {
