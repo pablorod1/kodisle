@@ -544,8 +544,7 @@ struct SystemPanel: View {
     }
 
     private func diskCard(_ s: SystemSnapshot) -> some View {
-        let used = s.diskTotal > 0 ? Double(s.diskTotal - s.diskFree) / Double(s.diskTotal) * 100 : 0
-        return ringCard(title: "Disk", percent: used, tint: usageColor(used), detail: "\(Fmt.bytes(s.diskFree)) free")
+        ringCard(title: "Disk", percent: s.diskPercent, tint: usageColor(s.diskPercent), detail: "\(Fmt.bytes(s.diskFree)) free")
     }
 
     private func batteryCard(_ b: BatteryInfo) -> some View {

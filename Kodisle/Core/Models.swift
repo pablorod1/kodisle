@@ -280,6 +280,9 @@ struct SystemSnapshot: Equatable {
     var netDown: Double = 0
     var netUp: Double = 0
     var battery: BatteryInfo?
+
+    var memoryPercent: Double { Double(memUsed) / Double(max(1, memTotal)) * 100 }
+    var diskPercent: Double { diskTotal > 0 ? Double(diskTotal - diskFree) / Double(diskTotal) * 100 : 0 }
 }
 
 /// Recent samples behind the System panel's charts, oldest first.

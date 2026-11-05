@@ -43,6 +43,32 @@ struct UsageRing: View {
     }
 }
 
+/// CPU, memory and disk as concentric rings. Each keeps its hue until it's nearly full, when it
+/// turns red; the position and the tile's text tell them apart without relying on color.
+struct SystemRings: View {
+    var cpu: Double
+    var memory: Double
+    var disk: Double
+    var size: CGFloat = 34
+    private let lineWidth: CGFloat = 3.2
+    private let gap: CGFloat = 1.4
+
+    var body: some View {
+        ZStack {
+            ring(cpu, .chartGreen, depth: 0)
+            ring(memory, .chartBlue, depth: 1)
+            ring(disk, .chartOrange, depth: 2)
+        }
+        .frame(width: size, height: size)
+        .help("CPU \(Fmt.percent(cpu)) · Memory \(Fmt.percent(memory)) · Disk \(Fmt.percent(disk))")
+    }
+
+    private func ring(_ percent: Double, _ tint: Color, depth: CGFloat) -> some View {
+        UsageRing(percent: percent, tint: percent >= 90 ? .red : tint,
+                  size: size - depth * 2 * (lineWidth + gap), lineWidth: lineWidth, showsLabel: false)
+    }
+}
+
 struct UsageBar: View {
     var percent: Double
     var tint: Color? = nil
@@ -498,6 +524,7 @@ struct TileLayout<Leading: View>: View {
                 Text(title).font(.system(size: 14.5, weight: .semibold)).lineLimit(1)
                     .contentTransition(.numericText())
                 Text(subtitle).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
+                    .minimumScaleFactor(0.85)
                     .privacySensitive(sensitive)
             }
             Spacer(minLength: 0)

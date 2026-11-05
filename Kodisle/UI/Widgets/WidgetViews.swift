@@ -67,9 +67,10 @@ struct WidgetTile: View {
                 TileIcon(symbol: "shippingbox.fill", tint: running > 0 ? .blue : .secondary)
             }
         case .system:
-            TileLayout(title: "CPU \(Int(store.system.cpu * 100))%",
-                       subtitle: "RAM \(Fmt.bytes(Int64(store.system.memUsed))) · \(Fmt.bytes(store.system.diskFree)) free") {
-                UsageRing(percent: store.system.cpu * 100, size: 30, lineWidth: 3.5, showsLabel: false)
+            let system = store.system
+            TileLayout(title: "CPU \(Int(system.cpu * 100))%",
+                       subtitle: "RAM \(Fmt.percent(system.memoryPercent)) · Disk \(Fmt.percent(system.diskPercent))") {
+                SystemRings(cpu: system.cpu * 100, memory: system.memoryPercent, disk: system.diskPercent)
             }
         case .battery:
             let b = store.system.battery
