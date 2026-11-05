@@ -8,9 +8,7 @@ settings:
   base:
     SWIFT_VERSION: "5.0"
     MACOSX_DEPLOYMENT_TARGET: "26.0"
-    CODE_SIGN_IDENTITY: "-"
     CODE_SIGN_STYLE: Manual
-    DEVELOPMENT_TEAM: ""
     ENABLE_HARDENED_RUNTIME: NO
     MARKETING_VERSION: "0.1.0"
     CURRENT_PROJECT_VERSION: "1"
@@ -19,6 +17,9 @@ targets:
     type: application
     platform: macOS
     sources: [Kodisle]
+    configFiles:
+      Debug: Signing.xcconfig
+      Release: Signing.xcconfig
     info:
       path: Kodisle/Info.plist
       properties:

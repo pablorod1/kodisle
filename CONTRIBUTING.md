@@ -6,6 +6,10 @@ Thanks for helping! A few guidelines:
   reads process arguments or transcript contents will be declined.
 - Setup: `brew install xcodegen && xcodegen generate && open Kodisle.xcodeproj`. The `.xcodeproj` is
   generated and not committed; edit `project.yml` for build settings.
+- **Stable local signing**: builds are ad-hoc signed by default, so macOS forgets privacy grants
+  (Downloads, Automation…) after every rebuild. To keep them, copy your identity into the git-ignored
+  `Signing.xcconfig.local`, using its SHA-1 from `security find-identity -v -p codesigning`:
+  `CODE_SIGN_IDENTITY = <sha1>` and `DEVELOPMENT_TEAM = <team id>`.
 - **Adding a widget**: add a case to `WidgetID` (`Core/Models.swift`), a data source in `Providers/`
   if needed, polling in `KodisleStore`, then a tile in `WidgetTile`, a glyph in `CompactGlyph` and a
   panel in `WidgetPanel` (`UI/Widgets/`).

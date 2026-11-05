@@ -1,0 +1,5 @@
+// Ad-hoc by default (CI and releases). macOS ties privacy grants of ad-hoc apps to the exact
+// binary, so a rebuild loses them: set a real identity in Signing.xcconfig.local (git-ignored).
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+#include? "Signing.xcconfig.local"
