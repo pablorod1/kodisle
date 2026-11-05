@@ -149,6 +149,7 @@ final class DockController {
     static var forceReveal = false
 
     init() {
+        SystemDock.hide()
         let root = DockView(model: model).kodisleEnvironment()
         model.focusPanel = { [weak self] in self?.panel.makeKey() }
         let host = OverlayPanel.hosting(root, size: CGSize(width: screen.frame.width, height: Self.panelHeight), anchor: .bottomFullWidth)
@@ -156,7 +157,6 @@ final class DockController {
         layout(height: 200)
         panel.orderFrontRegardless()
         watchSize()
-        SystemDock.hide()
         model.revealed = !AppSettings.shared.config.dockAutoHide || Self.forceReveal
 
         tracker = MouseTracker(onMove: { [weak self] point in

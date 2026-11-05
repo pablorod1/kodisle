@@ -23,16 +23,15 @@ enum SystemDock {
 
     static var isHiddenByKodisle: Bool { UserDefaults.standard.dictionary(forKey: savedKey) != nil }
 
+    /// Synchronous so the macOS Dock is gone before Kodisle's dock appears over it.
     static func hide() {
         guard !isHiddenByKodisle else { return }
         var saved: [String: Any] = ["autohide": dock?.object(forKey: "autohide") as? Bool ?? false]
         if let delay = dock?.object(forKey: "autohide-delay") as? Double { saved["autohide-delay"] = delay }
         UserDefaults.standard.set(saved, forKey: savedKey)
-        Task {
-            _ = try? await Shell.run("defaults", ["write", "com.apple.dock", "autohide", "-bool", "true"])
-            _ = try? await Shell.run("defaults", ["write", "com.apple.dock", "autohide-delay", "-float", "1000"])
-            _ = try? await Shell.run("killall", ["Dock"])
-        }
+        runSync("/usr/bin/defaults", ["write", "com.apple.dock", "autohide", "-bool", "true"])
+        runSync("/usr/bin/defaults", ["write", "com.apple.dock", "autohide-delay", "-float", "1000"])
+        runSync("/usr/bin/killall", ["Dock"])
     }
 
     /// Synchronous so it can run from `applicationWillTerminate`.
