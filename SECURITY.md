@@ -59,12 +59,15 @@ and dropped after two minutes.
 | `api.vercel.com` | Vercel CLI logged in | Vercel CLI token (`auth.json`, read-only, never refreshed) |
 | `api.github.com/repos/pablorod1/kodisle/releases/latest` | Once a day if update checks are on | none (anonymous) |
 | `github.com/pablorod1/kodisle/releases/download/…` | Only when you click *Update* | none — verified against the release SHA-256 |
+| `*.scdn.co`, `*.spotifycdn.com` | Spotify widget, for the cover of the current track | none (anonymous) |
 | URLs you add as endpoints | Endpoints widget | none |
 
 ## Local data Kodisle reads
 
 - `~/.claude/projects/**/*.jsonl`, `~/.codex/sessions/**`, `~/.codex/session_index.jsonl`: metadata, session titles and (optionally) the last agent reply.
 - `~/Downloads`: listing, only after you open the Downloads widget (macOS will ask).
+- `~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite`: read-only, only while the WhatsApp widget is on screen. macOS requires Full Disk Access for this and never prompts for it: you have to grant it in System Settings, and without it the widget simply stays empty. Name, last message and unread count of unread chats, kept in memory only and never sent anywhere.
+- Spotify's playback notifications, plus AppleScript while the Spotify widget is on screen (macOS will ask): current track, position and playback controls.
 - `lsof`, `ps`, `git status`, `docker ps` output.
 - `com.apple.dock` preferences, to import pinned apps and to hide/restore the Dock.
 

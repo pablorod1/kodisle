@@ -119,6 +119,8 @@ struct WidgetTile: View {
             TileLayout(title: "Clipboard", subtitle: clips.first.map { $0.masked.replacingOccurrences(of: "\n", with: " ") } ?? "Copy something", sensitive: true) {
                 TileIcon(symbol: "doc.on.clipboard.fill", tint: .teal)
             }
+        case .whatsapp: WhatsAppTile()
+        case .spotify: SpotifyTile()
         case .downloads:
             TileLayout(title: "Downloads", subtitle: store.downloads.first?.name ?? "Recent files", sensitive: true) {
                 TileIcon(symbol: "arrow.down.circle.fill", tint: .blue)
@@ -217,6 +219,11 @@ struct CompactGlyph: View {
             case .battery:
                 Image(systemName: "battery.75percent")
                 Text("\(store.system.battery?.percent ?? 100)%")
+            case .whatsapp:
+                Image(systemName: "message.fill").foregroundStyle(.green)
+                Text("\(store.whatsapp.alerting.count)").monospacedDigit()
+            case .spotify:
+                Image(systemName: store.spotify?.isPlaying == true ? "music.note" : "pause.fill").foregroundStyle(.green)
             default:
                 Image(systemName: id.symbol)
             }
@@ -250,6 +257,8 @@ struct WidgetPanel: View {
         case .downloads: DownloadsPanel()
         case .vercel: VercelPanel()
         case .clipboard: ClipboardPanel()
+        case .whatsapp: WhatsAppPanel()
+        case .spotify: SpotifyPanel()
         }
     }
 }

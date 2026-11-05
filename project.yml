@@ -30,6 +30,7 @@ targets:
         LSApplicationCategoryType: public.app-category.developer-tools
         NSHumanReadableCopyright: "MIT License"
         NSDownloadsFolderUsageDescription: "Kodisle lists your recent downloads in the Downloads widget."
+        NSAppleEventsUsageDescription: "Kodisle reads what Spotify is playing and controls playback from the Spotify widget."
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.github.pablorod1.kodisle

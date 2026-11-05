@@ -229,6 +229,7 @@ struct IslandView: View {
         case .github: (store.github?.failingRuns.count ?? 0) + (store.github?.reviewRequests.count ?? 0)
         case .endpoints: store.endpointStatus.values.filter { !$0.ok }.count
         case .agents: store.agents.filter { $0.state == .waiting }.count
+        case .whatsapp: store.whatsapp.alerting.count
         default: 0
         }
     }

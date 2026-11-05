@@ -24,6 +24,8 @@
 	<string>public.app-category.developer-tools</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Kodisle reads what Spotify is playing and controls playback from the Spotify widget.</string>
 	<key>NSDownloadsFolderUsageDescription</key>
 	<string>Kodisle lists your recent downloads in the Downloads widget.</string>
 	<key>NSHumanReadableCopyright</key>

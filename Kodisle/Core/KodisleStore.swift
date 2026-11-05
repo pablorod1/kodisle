@@ -20,6 +20,11 @@ final class KodisleStore {
     var dockerAvailable = false
     var system = SystemSnapshot()
     var systemHistory = SystemHistory()
+    var whatsapp = WhatsAppSnapshot()
+    var spotify: SpotifyTrack?
+    var spotifyArtwork: NSImage?
+    /// macOS refused Automation: no artwork or controls, but the track still shows.
+    var spotifyDenied = false
     var downloads: [DownloadItem] = []
     var currentEvent: KodisleEvent?
     var recentEvents: [KodisleEvent] = []
@@ -32,6 +37,8 @@ final class KodisleStore {
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
     @ObservationIgnored private let sampler = SystemSampler()
     @ObservationIgnored private var history = SystemHistory()
+    @ObservationIgnored private var spotifyObservers: [NSObjectProtocol] = []
+    @ObservationIgnored private var spotifyArtworkURL: URL?
     @ObservationIgnored private var downloadsWatcher: DirectoryWatcher?
     @ObservationIgnored private var bridge: Bridge?
     @ObservationIgnored private var visibleCounts: [WidgetID: Int] = [:]
@@ -56,6 +63,8 @@ final class KodisleStore {
             loop({ $0.config.endpointRefreshSeconds }) { await $0.refreshEndpoints() },
             loop({ _ in 15 }) { if $0.isVisible(.docker) { await $0.refreshDocker() } },
             loop({ _ in 5 }) { $0.sampleSystem() },
+            loop({ $0.whatsapp.state == .noAccess ? 30 : 10 }) { if $0.isVisible(.whatsapp) { await $0.refreshWhatsApp() } },
+            loop({ _ in 15 }) { if $0.isVisible(.spotify) { await $0.refreshSpotify() } },
             loop({ $0.deployments.contains(where: \.isActive) ? 12 : 60 }) { await $0.refreshVercel() },
             loop({ _ in 2 }) { $0.pruneAnsweredRequests() },
             loop({ _ in 300 }) { _ in TodoList.shared.refreshDay() },
@@ -69,6 +78,7 @@ final class KodisleStore {
         self.bridge = bridge
         TodoList.shared.start()
         observeSleep()
+        observeSpotify()
     }
 
     /// Downloads access triggers a macOS privacy prompt that blocks the calling thread,
@@ -112,6 +122,8 @@ final class KodisleStore {
         switch id {
         case .docker: Task { await refreshDocker() }
         case .system, .battery, .downloads: sampleSystem(record: false)
+        case .whatsapp: Task { await refreshWhatsApp() }
+        case .spotify: Task { await refreshSpotify() }
         default: break
         }
     }
@@ -320,6 +332,62 @@ final class KodisleStore {
         } else {
             dockerAvailable = false
             containers = []
+        }
+    }
+
+    func refreshWhatsApp() async {
+        let snapshot = await Task.detached(priority: .utility) { WhatsAppProvider.fetch() }.value
+        if snapshot != whatsapp { whatsapp = snapshot }
+    }
+
+    /// Track changes are pushed by Spotify, so nothing polls while it's closed or hidden.
+    private func observeSpotify() {
+        spotifyObservers.append(DistributedNotificationCenter.default().addObserver(forName: SpotifyProvider.stateChanged, object: nil, queue: .main) { note in
+            let track = note.userInfo.flatMap(SpotifyProvider.track(from:))
+            MainActor.assumeIsolated {
+                let store = KodisleStore.shared
+                store.apply(track.map { new in
+                    // The notification has no artwork: keep it while the track stays the same.
+                    var merged = new
+                    if store.spotify?.id == new.id { merged.artworkURL = store.spotify?.artworkURL }
+                    return merged
+                })
+                Task { await store.refreshSpotify() }
+            }
+        })
+        spotifyObservers.append(NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didTerminateApplicationNotification, object: nil, queue: .main) { note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.bundleIdentifier == SpotifyProvider.bundleID else { return }
+            MainActor.assumeIsolated { KodisleStore.shared.apply(nil) }
+        })
+    }
+
+    func refreshSpotify() async {
+        switch await SpotifyProvider.fetch() {
+        case .track(let track):
+            spotifyDenied = false
+            apply(track)
+        case .denied: spotifyDenied = true
+        case .failed: break
+        }
+    }
+
+    private func apply(_ track: SpotifyTrack?) {
+        if track != spotify { spotify = track }
+        guard let track else { spotifyArtwork = nil; spotifyArtworkURL = nil; return }
+        guard let url = track.artworkURL, url != spotifyArtworkURL else { return }
+        spotifyArtworkURL = url
+        Task {
+            let image = await SpotifyProvider.artwork(url)
+            if spotifyArtworkURL == url { spotifyArtwork = image }
+        }
+    }
+
+    func spotifyCommand(_ command: SpotifyProvider.Command) {
+        Task {
+            if !(await SpotifyProvider.send(command)) { spotifyDenied = true }
+            try? await Task.sleep(for: .milliseconds(250))
+            await refreshSpotify()
         }
     }
 

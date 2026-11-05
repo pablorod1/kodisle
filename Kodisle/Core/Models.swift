@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 enum WidgetID: String, Codable, CaseIterable, Identifiable {
-    case ai, claude, codex, agents, tasks, devServers, github, git, vercel, endpoints, docker, system, battery, timer, calculator, generator, downloads, clipboard
+    case ai, claude, codex, agents, tasks, devServers, github, git, vercel, endpoints, docker, system, battery, timer, calculator, generator, downloads, clipboard, whatsapp, spotify
 
     var id: String { rawValue }
 
@@ -26,6 +26,8 @@ enum WidgetID: String, Codable, CaseIterable, Identifiable {
         case .calculator: "Calculator"
         case .generator: "Generator"
         case .downloads: "Downloads"
+        case .whatsapp: "WhatsApp"
+        case .spotify: "Spotify"
         }
     }
 
@@ -49,6 +51,8 @@ enum WidgetID: String, Codable, CaseIterable, Identifiable {
         case .calculator: "plus.forwardslash.minus"
         case .generator: "key.horizontal"
         case .downloads: "arrow.down.circle"
+        case .whatsapp: "message.fill"
+        case .spotify: "music.note"
         }
     }
 }
@@ -61,7 +65,7 @@ extension WidgetID {
         case .claude: AIProvider.claude.tint
         case .codex: AIProvider.codex.tint
         case .tasks: .indigo
-        case .devServers: .green
+        case .devServers, .whatsapp, .spotify: .green
         case .github, .vercel, .calculator: .primary
         case .git, .timer: .orange
         case .endpoints, .clipboard: .teal
@@ -309,6 +313,56 @@ struct DownloadItem: Identifiable, Equatable {
     var kind: String
     var added: Date
     var isDirectory: Bool
+}
+
+// MARK: - WhatsApp
+
+struct WhatsAppChat: Identifiable, Equatable {
+    /// The chat's JID.
+    let id: String
+    var name: String
+    var preview: String
+    /// -1 when the chat was marked as unread by hand.
+    var unread: Int
+    var date: Date
+    var isGroup: Bool
+    var isMuted: Bool
+}
+
+struct WhatsAppSnapshot: Equatable {
+    enum State: Equatable { case loading, notInstalled, noAccess, ready }
+    var state: State = .loading
+    var chats: [WhatsAppChat] = []
+
+    /// Muted chats stay in the panel but, like WhatsApp's own badge, don't count.
+    var alerting: [WhatsAppChat] { chats.filter { !$0.isMuted } }
+}
+
+// MARK: - Spotify
+
+struct SpotifyTrack: Equatable {
+    var id: String
+    var title: String
+    var artist: String
+    var album: String
+    /// Seconds.
+    var duration: Double
+    var position: Double
+    var isPlaying: Bool
+    var artworkURL: URL?
+    var observedAt = Date()
+
+    /// Playback position right now, extrapolated from the last observation.
+    func position(at date: Date) -> Double {
+        let elapsed = isPlaying ? date.timeIntervalSince(observedAt) : 0
+        return duration > 0 ? min(duration, position + elapsed) : position + elapsed
+    }
+
+    /// `observedAt` and the position always change, so comparing them would redraw on every poll.
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.id == rhs.id && lhs.isPlaying == rhs.isPlaying && lhs.artworkURL == rhs.artworkURL
+            && abs(lhs.position(at: .now) - rhs.position(at: .now)) < 2
+    }
 }
 
 // MARK: - Events (live activities for the island)

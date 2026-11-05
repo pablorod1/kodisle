@@ -12,14 +12,16 @@ struct KodisleConfig: Codable, Equatable {
     var islandAutoEars = true
     var islandLeft: WidgetID = .claude
     var islandRight: WidgetID = .agents
-    var islandTabs: [WidgetID] = [.ai, .agents, .tasks, .devServers, .github, .vercel, .clipboard, .endpoints, .generator, .downloads]
+    var islandTabs: [WidgetID] = [.ai, .agents, .tasks, .devServers, .github, .vercel, .clipboard, .endpoints, .generator, .downloads, .whatsapp, .spotify]
     var dockEnabled = false
     var dockAutoHide = false
     /// "system" follows macOS (Desktop & Dock › Magnification), or "on" / "off".
     var dockMagnification = "system"
     var dockIconSize: Double = 52
     var dockMatchSystemSize = true
-    var dockWidgets: [WidgetID] = [.claude, .codex, .tasks, .devServers, .github, .timer, .calculator]
+    var dockWidgets: [WidgetID] = [.whatsapp, .spotify, .claude, .codex, .tasks, .devServers, .github, .timer, .calculator]
+    /// Marks configs that were already offered the WhatsApp and Spotify widgets.
+    var mediaWidgetsAdded = true
     var dockWidgetsPerPage = 3
     var dockPinnedApps: [String]?
     var systemDockBadge = false
@@ -84,6 +86,17 @@ final class AppSettings {
                     widgets.append("tasks")
                     merged[key] = widgets
                 }
+            }
+        }
+        // Migration: configs saved before WhatsApp and Spotify existed get them once.
+        if stored["mediaWidgetsAdded"] == nil {
+            if var widgets = merged["dockWidgets"] as? [String] {
+                widgets.insert(contentsOf: ["whatsapp", "spotify"].filter { !widgets.contains($0) }, at: 0)
+                merged["dockWidgets"] = widgets
+            }
+            if var tabs = merged["islandTabs"] as? [String] {
+                tabs.append(contentsOf: ["whatsapp", "spotify"].filter { !tabs.contains($0) })
+                merged["islandTabs"] = tabs
             }
         }
         // Migration: magnification used to be a Bool.
