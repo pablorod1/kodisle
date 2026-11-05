@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 enum WidgetID: String, Codable, CaseIterable, Identifiable {
-    case ai, claude, codex, agents, devServers, github, git, vercel, endpoints, docker, system, battery, timer, calculator, generator, downloads, clipboard
+    case ai, claude, codex, agents, tasks, devServers, github, git, vercel, endpoints, docker, system, battery, timer, calculator, generator, downloads, clipboard
 
     var id: String { rawValue }
 
@@ -12,6 +12,7 @@ enum WidgetID: String, Codable, CaseIterable, Identifiable {
         case .claude: "Claude"
         case .codex: "Codex"
         case .agents: "Agents"
+        case .tasks: "Tasks"
         case .devServers: "Dev servers"
         case .github: "GitHub"
         case .git: "Git"
@@ -34,6 +35,7 @@ enum WidgetID: String, Codable, CaseIterable, Identifiable {
         case .claude: "asterisk"
         case .codex: "chevron.left.forwardslash.chevron.right"
         case .agents: "sparkles"
+        case .tasks: "checklist"
         case .devServers: "server.rack"
         case .github: "arrow.triangle.pull"
         case .git: "arrow.triangle.branch"

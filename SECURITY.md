@@ -33,6 +33,16 @@ Integrations talk to Kodisle through `~/.kodisle/bridge.sock` (directory 0700, s
   arguments and flags are dropped before anything leaves the shell.
 - Installing an integration backs up the touched file (`*.kodisle-backup`) and only adds/removes Kodisle's own entries.
 
+## Tasks
+
+Tasks are stored in plain text in `~/.kodisle/tasks.json` (directory 0700, file 0600) and never leave your Mac through
+Kodisle. Don't keep secrets in them. Titles, notes and projects are hidden by Privacy mode.
+
+The optional Claude Code integration runs `claude mcp add` (user scope) to register `Kodisle --mcp`, a local stdio server
+with no network access that only reads and writes that file, and adds `mcp__kodisle` to `permissions.allow` in
+`~/.claude/settings.json` (backup in `*.kodisle-backup`) so Claude can use it without asking. What Claude reads from the
+list goes to Anthropic like any other tool result. From `~/.claude.json`, Kodisle only checks whether the server is registered.
+
 ## Clipboard history
 
 In memory only, cleared on quit. Pasteboard items marked concealed/transient (password managers) are never read into

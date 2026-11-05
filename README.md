@@ -27,6 +27,7 @@ live widget tiles, and a menu bar panel.
 
 - **AI usage**: Claude Code and Codex **5-hour and weekly plan limits**, the same numbers as `/usage`, with reset countdowns. Alerts at 80% / 95%.
 - **Agents**: live Claude Code / Codex sessions with their titles: *working*, *waiting for you*, *done*. When an agent finishes, the island shows the session title and a one-line summary of what it did.
+- **Tasks**: a daily to-do list with notes, projects and priorities. What you don't finish carries over to the next day; finished tasks move to a history. Claude Code can manage it for you (see below).
 - **Dev servers**: every port you're listening on from a project folder, with framework detection (Next.js, Vite, Astro…), uptime, open / copy / reveal / stop.
 - **GitHub**: your open PRs with check status, review requests, recent Actions runs in the repos you're working on, unread notifications.
 - **Git**: the most recently active local repos: branch, ahead/behind, uncommitted changes.
@@ -42,9 +43,10 @@ live widget tiles, and a menu bar panel.
 ## Integrations (opt-in, Settings › Integrations)
 
 - **Approve Claude Code permissions from the island.** A `PermissionRequest` hook forwards each request to the island, which shows the command with *Allow*, *Always allow* or *Deny*. If Kodisle isn't running, Claude Code asks in the terminal as usual.
+- **Tasks from Claude Code.** Kodisle registers itself as an MCP server, so Claude Code can list, add and complete your tasks: tell it *"add a task to…"*, and it also ticks off what it finishes and notes follow-ups on its own. Tasks it touches are marked, and the island tells you when it does. It works in every project and while Kodisle is closed.
 - **Long terminal commands.** A zsh hook notifies the island when a command that ran ≥ 15 s finishes, with ✓/✗ and duration. Only the program and subcommand are sent (`pnpm build`), never arguments.
 
-Both talk to Kodisle through a local Unix socket (`~/.kodisle/bridge.sock`, owner-only) and back up any file they modify.
+Permissions and terminal commands talk to Kodisle through a local Unix socket (`~/.kodisle/bridge.sock`, owner-only); tasks live in `~/.kodisle/tasks.json`. Every integration backs up any file it modifies.
 
 ## Install
 
@@ -131,7 +133,7 @@ Kodisle/
 ├── App/          entry point, surface lifecycle, dock badge
 ├── Core/         settings, store (polling + events), shell runner, helpers
 ├── Providers/    data sources: AI usage, agents, dev servers, GitHub/git, system…
-├── Tools/        generator, calculator, focus timer
+├── Tools/        generator, calculator, focus timer, tasks
 ├── UI/           shared components and every widget (tile + panel)
 ├── Surfaces/     island, dock, menu bar
 └── Settings/     settings window

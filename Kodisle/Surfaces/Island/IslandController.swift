@@ -169,7 +169,7 @@ final class IslandController {
         case .expanded:
             if inside {
                 collapseTask?.cancel(); collapseTask = nil
-            } else if !model.pinned, collapseTask == nil {
+            } else if !model.pinned, !isEditingTask, collapseTask == nil {
                 collapseTask = Task { [weak self] in
                     try? await Task.sleep(for: .milliseconds(350))
                     guard !Task.isCancelled else { return }
@@ -177,6 +177,11 @@ final class IslandController {
                 }
             }
         }
+    }
+
+    /// Typing a task keeps the island open if the pointer wanders off; a click outside still closes it.
+    private var isEditingTask: Bool {
+        model.selectedTab == .tasks && (panel.firstResponder as? NSTextView)?.string.isEmpty == false
     }
 
     private func outsideClick(_ point: NSPoint) {

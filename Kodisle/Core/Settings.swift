@@ -12,14 +12,14 @@ struct KodisleConfig: Codable, Equatable {
     var islandAutoEars = true
     var islandLeft: WidgetID = .claude
     var islandRight: WidgetID = .agents
-    var islandTabs: [WidgetID] = [.ai, .agents, .devServers, .github, .vercel, .clipboard, .endpoints, .generator, .downloads]
+    var islandTabs: [WidgetID] = [.ai, .agents, .tasks, .devServers, .github, .vercel, .clipboard, .endpoints, .generator, .downloads]
     var dockEnabled = false
     var dockAutoHide = false
     /// "system" follows macOS (Desktop & Dock › Magnification), or "on" / "off".
     var dockMagnification = "system"
     var dockIconSize: Double = 52
     var dockMatchSystemSize = true
-    var dockWidgets: [WidgetID] = [.claude, .codex, .devServers, .github, .timer, .calculator]
+    var dockWidgets: [WidgetID] = [.claude, .codex, .tasks, .devServers, .github, .timer, .calculator]
     var dockWidgetsPerPage = 3
     var dockPinnedApps: [String]?
     var systemDockBadge = false
@@ -41,6 +41,8 @@ struct KodisleConfig: Codable, Equatable {
     var privacyMode = false
     var autoUpdateCheck = true
     var agentSummaries = true
+    /// Island banner when Claude Code adds or completes a task.
+    var tasksEvents = true
     var clipboardClearSeconds: Double = 60
     var focusMinutes: Double = 25
     var breakMinutes: Double = 5
@@ -74,6 +76,15 @@ final class AppSettings {
         if stored["vercelEnabled"] == nil, var tabs = stored["islandTabs"] as? [String] {
             for tab in ["vercel", "clipboard"] where !tabs.contains(tab) { tabs.append(tab) }
             merged["islandTabs"] = tabs
+        }
+        // Migration: configs saved before Tasks existed get the tab and the dock tile once.
+        if stored["tasksEvents"] == nil {
+            for key in ["islandTabs", "dockWidgets"] {
+                if var widgets = merged[key] as? [String], !widgets.contains("tasks") {
+                    widgets.append("tasks")
+                    merged[key] = widgets
+                }
+            }
         }
         // Migration: magnification used to be a Bool.
         if merged["dockMagnification"] is Bool { merged["dockMagnification"] = "system" }

@@ -6,6 +6,7 @@ struct WidgetTile: View {
     @Environment(KodisleStore.self) private var store
     private var timer: FocusTimer { .shared }
     private var calc: CalculatorModel { .shared }
+    private var todos: TodoList { .shared }
 
     var body: some View {
         content.trackVisibility(id)
@@ -104,6 +105,15 @@ struct WidgetTile: View {
                     if let latest { Circle().fill(latest.color).frame(width: 9, height: 9).offset(x: 12, y: 10) }
                 }
             }
+        case .tasks:
+            let pending = todos.pendingCount, done = todos.doneTodayCount
+            TileLayout(title: pending == 0 ? "All done" : "\(pending) pending",
+                       subtitle: todos.next?.title ?? (done > 0 ? "\(done) done today" : "Add a task"),
+                       sensitive: true) {
+                UsageRing(percent: pending + done == 0 ? 0 : Double(done) / Double(pending + done) * 100,
+                          tint: .indigo, size: 32, lineWidth: 3.5, showsLabel: false)
+                    .overlay(Image(systemName: "checklist").font(.system(size: 11, weight: .bold)).foregroundStyle(.indigo))
+            }
         case .clipboard:
             let clips = ClipboardHistory.shared.items
             TileLayout(title: "Clipboard", subtitle: clips.first.map { $0.masked.replacingOccurrences(of: "\n", with: " ") } ?? "Copy something", sensitive: true) {
@@ -170,6 +180,9 @@ struct CompactGlyph: View {
                 } else {
                     Image(systemName: "sparkles").foregroundStyle(.secondary)
                 }
+            case .tasks:
+                Image(systemName: "checklist").foregroundStyle(.secondary)
+                Text("\(TodoList.shared.pendingCount)").monospacedDigit()
             case .devServers:
                 Image(systemName: "server.rack").foregroundStyle(store.devServers.isEmpty ? .secondary : Color.green)
                 if store.devServers.count == 1, let port = store.devServers.first?.ports.first {
@@ -224,6 +237,7 @@ struct WidgetPanel: View {
         switch id {
         case .ai, .claude, .codex: AIUsagePanel()
         case .agents: AgentsPanel()
+        case .tasks: TasksPanel()
         case .devServers: DevServersPanel()
         case .github: GitHubPanel()
         case .git: GitPanel()

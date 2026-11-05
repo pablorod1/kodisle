@@ -179,6 +179,77 @@ enum Integrations {
         try? FileManager.default.removeItem(at: permissionHook)
     }
 
+    // MARK: Claude Code tasks (MCP)
+
+    private static let tasksServerName = "kodisle"
+    private static let tasksPermission = "mcp__kodisle"
+    private static var tasksServer: URL { hooksDir.appendingPathComponent("tasks-mcp.sh") }
+    private static var claudeConfig: URL { URL(fileURLWithPath: NSHomeDirectory() + "/.claude.json") }
+
+    /// Claude Code runs this launcher rather than the app directly, so moving the app or
+    /// updating it only has to rewrite the launcher, not Claude Code's configuration.
+    private static var tasksServerScript: String {
+        let binary = (Bundle.main.executablePath ?? "").replacingOccurrences(of: "'", with: "'\\''")
+        return "#!/bin/sh\n# Kodisle — starts the task list MCP server for Claude Code.\nexec '\(binary)' --mcp\n"
+    }
+
+    private static func writeTasksServer() throws {
+        try FileManager.default.createDirectory(at: hooksDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try tasksServerScript.write(to: tasksServer, atomically: true, encoding: .utf8)
+        chmod(tasksServer.path, 0o700)
+    }
+
+    static var claudeTasksInstalled: Bool {
+        (readJSON(claudeConfig)?["mcpServers"] as? [String: Any])?[tasksServerName] != nil
+    }
+
+    /// Registers the server through Claude Code's own CLI (`~/.claude.json` is rewritten by
+    /// every running session) and allows its tools, so Claude can use them without a prompt.
+    static func installClaudeTasks() async throws {
+        try writeTasksServer()
+        _ = try? await Shell.run("claude", ["mcp", "remove", "--scope", "user", tasksServerName])
+        let added = try await Shell.run("claude", ["mcp", "add", "--scope", "user", tasksServerName, "--", tasksServer.path])
+        guard added.ok else { throw IntegrationError.claude(added.stderr) }
+
+        var settings = readJSON(claudeSettings) ?? [:]
+        try backup(claudeSettings)
+        var permissions = settings["permissions"] as? [String: Any] ?? [:]
+        var allow = permissions["allow"] as? [String] ?? []
+        if !allow.contains(tasksPermission) { allow.append(tasksPermission) }
+        permissions["allow"] = allow
+        settings["permissions"] = permissions
+        try writeJSON(settings, to: claudeSettings)
+    }
+
+    static func uninstallClaudeTasks() async throws {
+        let removed = try await Shell.run("claude", ["mcp", "remove", "--scope", "user", tasksServerName])
+        guard removed.ok || !claudeTasksInstalled else { throw IntegrationError.claude(removed.stderr) }
+
+        if var settings = readJSON(claudeSettings), var permissions = settings["permissions"] as? [String: Any],
+           let allow = permissions["allow"] as? [String], allow.contains(tasksPermission) {
+            try backup(claudeSettings)
+            permissions["allow"] = allow.filter { $0 != tasksPermission }
+            settings["permissions"] = permissions
+            try writeJSON(settings, to: claudeSettings)
+        }
+        try? FileManager.default.removeItem(at: tasksServer)
+    }
+
+    /// Keeps the launcher pointing at this copy of the app (e.g. after moving it).
+    static func refreshTasksServer() {
+        guard let current = try? String(contentsOf: tasksServer, encoding: .utf8), current != tasksServerScript else { return }
+        try? writeTasksServer()
+    }
+
+    private enum IntegrationError: LocalizedError {
+        case claude(String)
+        var errorDescription: String? {
+            switch self {
+            case .claude(let output): "Claude Code: \(output.trimmingCharacters(in: .whitespacesAndNewlines))"
+            }
+        }
+    }
+
     // MARK: zsh long-command notifications
 
     /// Only the program and its first subcommand are sent (e.g. `pnpm build`), never arguments,

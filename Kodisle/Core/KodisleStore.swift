@@ -56,6 +56,7 @@ final class KodisleStore {
             loop({ _ in 5 }) { if $0.isVisible(.system, .battery, .downloads) { $0.sampleSystem() } },
             loop({ $0.deployments.contains(where: \.isActive) ? 12 : 60 }) { await $0.refreshVercel() },
             loop({ _ in 2 }) { $0.pruneAnsweredRequests() },
+            loop({ _ in 300 }) { _ in TodoList.shared.refreshDay() },
             loop({ _ in 6 * 3600 }) { _ in await Updater.shared.checkIfDue() },
         ]
         if config.clipboardEnabled { ClipboardHistory.shared.start() }
@@ -64,6 +65,7 @@ final class KodisleStore {
         }
         bridge.start()
         self.bridge = bridge
+        TodoList.shared.start()
         observeSleep()
     }
 

@@ -239,6 +239,8 @@ private struct IntegrationSettings: View {
     @Environment(AppSettings.self) private var settings
     @State private var approvals = Integrations.claudeApprovalsInstalled
     @State private var zsh = Integrations.zshInstalled
+    @State private var tasks = Integrations.claudeTasksInstalled
+    @State private var tasksBusy = false
     @State private var error: String?
 
     var body: some View {
@@ -251,6 +253,11 @@ private struct IntegrationSettings: View {
                 }))
                 Text("Adds a `PermissionRequest` hook to ~/.claude/settings.json (a backup is saved next to it). When Claude Code asks for permission, the island shows the command with Allow / Always allow / Deny. If Kodisle isn't running, Claude Code asks in the terminal as usual. Restart running Claude Code sessions after enabling.")
                     .font(.caption).foregroundStyle(.secondary)
+                Toggle("Let Claude Code manage your tasks", isOn: Binding(get: { tasks }, set: setTasks))
+                    .disabled(tasksBusy)
+                Text("Registers Kodisle as an MCP server for all your projects and allows its tools in ~/.claude/settings.json (a backup is saved next to it). Claude can then list, add and complete tasks on its own, including follow-ups you didn't ask for, even while Kodisle is closed. Restart running Claude Code sessions after enabling.")
+                    .font(.caption).foregroundStyle(.secondary)
+                Toggle("Show in the island when Claude changes a task", isOn: $settings.config.tasksEvents)
             } header: { Text("Claude Code") }
 
             Section {
@@ -275,6 +282,20 @@ private struct IntegrationSettings: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    private func setTasks(_ enable: Bool) {
+        tasksBusy = true
+        Task {
+            do {
+                if enable { try await Integrations.installClaudeTasks() } else { try await Integrations.uninstallClaudeTasks() }
+                error = nil
+            } catch {
+                self.error = error.localizedDescription
+            }
+            tasks = Integrations.claudeTasksInstalled
+            tasksBusy = false
+        }
     }
 
     private func run(_ work: () throws -> Void) {

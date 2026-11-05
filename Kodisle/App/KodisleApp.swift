@@ -1,7 +1,18 @@
 import AppKit
 import SwiftUI
 
+/// The same binary is the app and, with `--mcp`, the headless server Claude Code launches.
 @main
+enum KodisleEntry {
+    @MainActor static func main() {
+        if CommandLine.arguments.contains("--mcp") {
+            TodoMCPServer.run()
+        } else {
+            KodisleApp.main()
+        }
+    }
+}
+
 struct KodisleApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
     @State private var settings = AppSettings.shared
@@ -33,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         installSignalHandlers()
         DockController.forceReveal = debugDock
         KodisleStore.shared.start()
+        Integrations.refreshTasksServer()
         applySurfaces()
         watchSettings()
         applyDebugArguments()
