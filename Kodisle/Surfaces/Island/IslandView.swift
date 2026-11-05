@@ -32,6 +32,7 @@ struct IslandView: View {
     var onExpand: () -> Void = {}
     @Environment(KodisleStore.self) private var store
     @Environment(AppSettings.self) private var settings
+    @Namespace private var tabs
 
     private var bottomRadius: CGFloat {
         switch model.mode {
@@ -58,6 +59,8 @@ struct IslandView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .foregroundStyle(.white)
+        // Always black, whatever the system appearance.
+        .environment(\.colorScheme, .dark)
     }
 
     @ViewBuilder
@@ -196,8 +199,8 @@ struct IslandView: View {
         VStack(spacing: 10) {
             HStack(spacing: 4) {
                 ForEach(settings.config.islandTabs) { tab in
-                    IslandTabButton(tab: tab, selected: model.selectedTab == tab, badge: badgeCount(for: tab)) {
-                        withAnimation(.snappy) { model.selectedTab = tab }
+                    IslandTabButton(tab: tab, selected: model.selectedTab == tab, badge: badgeCount(for: tab), namespace: tabs) {
+                        withAnimation(.spring(response: 0.34, dampingFraction: 0.84)) { model.selectedTab = tab }
                     }
                 }
                 Spacer()
@@ -209,6 +212,9 @@ struct IslandView: View {
 
             ScrollView {
                 WidgetPanel(id: model.selectedTab)
+                    .environment(\.panelWide, true)
+                    .id(model.selectedTab)
+                    .transition(.opacity.combined(with: .offset(y: 6)))
                     .padding(.horizontal, 18)
                     .padding(.bottom, 18)
                     .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -228,28 +234,46 @@ struct IslandView: View {
     }
 }
 
+/// Icon tab; the selected one names itself, so twelve bare icons stay readable.
 private struct IslandTabButton: View {
     let tab: WidgetID
     let selected: Bool
     let badge: Int
+    let namespace: Namespace.ID
     let action: () -> Void
+    @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: tab.symbol)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: 34, height: 28)
-                .background(RoundedRectangle(cornerRadius: 9).fill(Color.white.opacity(selected ? 0.18 : 0)))
-                .foregroundStyle(Color.white.opacity(selected ? 1 : 0.6))
-                .overlay(alignment: .topTrailing) {
-                    if badge > 0 {
-                        Text("\(badge)").font(.system(size: 9, weight: .bold))
-                            .padding(.horizontal, 4).padding(.vertical, 1)
-                            .background(Capsule().fill(Color.red)).offset(x: 4, y: -3)
-                    }
+            HStack(spacing: 6) {
+                Image(systemName: tab.symbol)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(selected ? tab.tint : Color.white.opacity(hovering ? 0.95 : 0.6))
+                if selected {
+                    Text(tab.title).font(.system(size: 12, weight: .semibold)).lineLimit(1).fixedSize()
+                        .transition(.opacity)
                 }
+            }
+            .padding(.horizontal, selected ? 10 : 0)
+            .frame(minWidth: 32).frame(height: 28)
+            .background {
+                if selected {
+                    Capsule().fill(Color.white.opacity(0.15)).matchedGeometryEffect(id: "tab", in: namespace)
+                } else if hovering {
+                    Capsule().fill(Color.white.opacity(0.07))
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if badge > 0 {
+                    Text("\(badge)").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(Capsule().fill(Color.red)).offset(x: 3, y: -3)
+                }
+            }
+            .contentShape(Capsule())
         }
         .buttonStyle(.plain)
+        .onHover { hovering = $0 }
         .help(tab.title)
     }
 }

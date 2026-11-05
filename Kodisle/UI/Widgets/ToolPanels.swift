@@ -11,10 +11,7 @@ struct GeneratorPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             PanelHeader(symbol: "key.horizontal.fill", title: "Generator", tint: .yellow)
-            Picker("", selection: $model.mode) {
-                ForEach(GeneratorModel.Mode.allCases) { Text($0.rawValue).tag($0) }
-            }
-            .pickerStyle(.segmented).labelsHidden()
+            PillTabs(selection: $model.mode, options: GeneratorModel.Mode.allCases.map { ($0, $0.rawValue) })
 
             ScrollView {
                 Text(highlighted)
@@ -24,15 +21,14 @@ struct GeneratorPanel: View {
                     .padding(14)
             }
             .frame(height: model.mode == .lorem ? 120 : 84)
-            .background(RoundedRectangle(cornerRadius: 14).fill(.primary.opacity(0.06)))
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.primary.opacity(0.06)))
 
             HStack(spacing: 10) {
                 if model.mode == .password {
-                    Capsule().fill(.primary.opacity(0.1)).frame(width: 70, height: 6)
-                        .overlay(alignment: .leading) {
-                            Capsule().fill(strengthColor).frame(width: 70 * model.strength.fraction, height: 6)
-                        }
-                    Text("\(model.strength.label) · \(Int(model.entropy)) bits").font(.system(size: 11)).foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        UsageBar(percent: model.strength.fraction * 100, tint: strengthColor, height: 5).frame(width: 110)
+                        Text("\(model.strength.label) · \(Int(model.entropy)) bits").font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 IconButton(symbol: "arrow.clockwise", help: "Regenerate") { model.generate() }
@@ -43,7 +39,7 @@ struct GeneratorPanel: View {
                 } label: {
                     Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc").frame(minWidth: 64)
                 }
-                .buttonStyle(.borderedProminent).controlSize(.regular)
+                .buttonStyle(PillButtonStyle(tint: copied ? .green : .chartBlue))
             }
             options
         }
@@ -54,10 +50,7 @@ struct GeneratorPanel: View {
         switch model.mode {
         case .password:
             HStack {
-                Picker("", selection: $model.style) {
-                    ForEach(GeneratorModel.Style.allCases) { Text($0.rawValue).tag($0) }
-                }
-                .pickerStyle(.segmented).labelsHidden().frame(width: 190)
+                PillTabs(selection: $model.style, options: GeneratorModel.Style.allCases.map { ($0, $0.rawValue) }).frame(width: 200)
                 Spacer()
                 Text(model.style == .random ? "\(Int(model.length)) characters" : "\(Int(model.words)) words")
                     .font(.system(size: 11)).foregroundStyle(.secondary)
@@ -67,15 +60,14 @@ struct GeneratorPanel: View {
             } else {
                 Slider(value: $model.words, in: 3...10, step: 1)
             }
-            HStack(spacing: 8) {
-                Toggle("A–Z", isOn: $model.upper)
-                Toggle("a–z", isOn: $model.lower)
-                Toggle("0–9", isOn: $model.digits)
-                Toggle("#$&", isOn: $model.symbols)
+            HStack(spacing: 6) {
+                ChipToggle(title: "A–Z", isOn: $model.upper)
+                ChipToggle(title: "a–z", isOn: $model.lower)
+                ChipToggle(title: "0–9", isOn: $model.digits)
+                ChipToggle(title: "#$&", isOn: $model.symbols)
             }
-            .toggleStyle(.button).controlSize(.small)
             Text("Copied passwords are hidden from clipboard managers and auto-cleared.")
-                .font(.system(size: 10)).foregroundStyle(.tertiary)
+                .font(.system(size: 10.5)).foregroundStyle(.secondary)
         case .uuid:
             Toggle("Uppercase", isOn: $model.uuidUppercase).toggleStyle(.switch).controlSize(.small)
         case .number:
@@ -117,26 +109,26 @@ struct GeneratorPanel: View {
 
 struct TimerPanel: View {
     @Bindable private var timer = FocusTimer.shared
+    private var tint: Color { timer.phase == .focus ? .orange : .teal }
 
     var body: some View {
         VStack(spacing: 14) {
-            PanelHeader(symbol: "timer", title: "Focus timer", tint: .orange) {
-                Text("\(timer.completedSessions) sessions").font(.caption).foregroundStyle(.secondary)
-            }
+            PanelHeader(symbol: "timer", title: "Focus timer", tint: .orange,
+                        subtitle: timer.completedSessions == 0 ? "No sessions yet today" : "\(timer.completedSessions) session\(timer.completedSessions == 1 ? "" : "s") done")
             ZStack {
-                UsageRing(percent: timer.progress * 100, tint: timer.phase == .focus ? .orange : .teal, size: 130, lineWidth: 8, showsLabel: false)
+                UsageRing(percent: timer.progress * 100, tint: tint, size: 150, lineWidth: 10, showsLabel: false)
                 VStack(spacing: 2) {
-                    Text(Fmt.clock(timer.remaining)).font(.system(size: 30, weight: .bold, design: .rounded)).monospacedDigit()
+                    Text(Fmt.clock(timer.remaining)).font(.system(size: 36, weight: .semibold, design: .rounded)).monospacedDigit()
                         .contentTransition(.numericText())
-                    Text(timer.phase.rawValue).font(.caption).foregroundStyle(.secondary)
+                    Text(timer.phase.rawValue).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
                 }
             }
             HStack(spacing: 12) {
                 IconButton(symbol: "arrow.counterclockwise", help: "Reset") { timer.reset() }
                 Button { timer.toggle() } label: {
-                    Image(systemName: timer.isRunning ? "pause.fill" : "play.fill").font(.title3).frame(width: 44, height: 30)
+                    Label(timer.isRunning ? "Pause" : "Start", systemImage: timer.isRunning ? "pause.fill" : "play.fill").frame(minWidth: 76)
                 }
-                .buttonStyle(.borderedProminent).tint(.orange)
+                .buttonStyle(PillButtonStyle(tint: tint))
                 IconButton(symbol: "forward.end.fill", help: "Skip to \(timer.phase == .focus ? "break" : "focus")") { timer.switchPhase() }
             }
         }
@@ -165,22 +157,25 @@ struct CalculatorPanel: View {
                     .contentTransition(.numericText())
             }
             .padding(14)
-            .background(RoundedRectangle(cornerRadius: 14).fill(.primary.opacity(0.06)))
-            HStack {
-                Button("Copy result") { if let r = calc.result { Clipboard.copy(r) } }.disabled(calc.result == nil)
-                Button("Clear") { calc.clear() }
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.primary.opacity(0.06)))
+            HStack(spacing: 8) {
+                Button("Copy result") { if let r = calc.result { Clipboard.copy(r) } }
+                    .buttonStyle(PillButtonStyle()).disabled(calc.result == nil)
+                Button("Clear") { calc.clear() }.buttonStyle(PillButtonStyle(prominent: false))
                 Spacer()
-                Text("↩ to keep result").font(.caption2).foregroundStyle(.tertiary)
+                Text("↩ to keep result").font(.system(size: 10.5)).foregroundStyle(.secondary)
             }
-            .controlSize(.small)
+            if !calc.history.isEmpty { SectionLabel(text: "History").padding(.top, 4) }
             ForEach(Array(calc.history.enumerated()), id: \.offset) { _, entry in
                 HStack {
-                    Text(entry.expr).foregroundStyle(.secondary)
+                    Text(entry.expr).foregroundStyle(.secondary).lineLimit(1)
                     Spacer()
-                    Text(entry.result).fontWeight(.semibold)
+                    Text(entry.result).fontWeight(.semibold).lineLimit(1)
                 }
                 .font(.system(size: 12, design: .monospaced))
+                .rowStyle()
                 .onTapGesture { calc.expression = entry.result }
+                .help("Use this result")
             }
         }
         .onAppear { focused = true }
@@ -211,29 +206,22 @@ struct DownloadsPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            PanelHeader(symbol: "arrow.down.circle.fill", title: "Downloads", tint: .blue) {
+            PanelHeader(symbol: "arrow.down.circle.fill", title: "Downloads", tint: .blue,
+                        subtitle: "\(store.downloads.count) items · \(Fmt.bytes(store.system.diskFree)) available") {
                 Menu {
                     Button("Open Downloads folder") { NSWorkspace.shared.open(DownloadsProvider.folder) }
                     Button("Refresh") { store.refreshDownloads() }
                 } label: {
-                    Image(systemName: "ellipsis").frame(width: 24, height: 24).background(Circle().fill(.primary.opacity(0.07)))
+                    Image(systemName: "ellipsis").frame(width: 26, height: 26).background(Circle().fill(.primary.opacity(0.07)))
                 }
                 .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
             }
-            HStack {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Search", text: $query).textFieldStyle(.plain)
-            }
-            .padding(8)
-            .background(RoundedRectangle(cornerRadius: 10).fill(.primary.opacity(0.06)))
-
+            SearchField(text: $query)
             if filtered.isEmpty { EmptyHint(symbol: "tray", text: query.isEmpty ? "Downloads is empty" : "No matches") }
             ForEach(groups, id: \.0) { title, items in
                 SectionLabel(text: title).padding(.top, 4)
-                ForEach(items) { item in DownloadRow(item: item) }
+                RowGrid { ForEach(items) { item in DownloadRow(item: item) } }
             }
-            Text("\(store.downloads.count) items · \(Fmt.bytes(store.system.diskFree)) available")
-                .font(.system(size: 11)).foregroundStyle(.tertiary).frame(maxWidth: .infinity)
         }
         .onAppear { store.ensureDownloads() }
     }
@@ -290,18 +278,15 @@ struct ClipboardPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            PanelHeader(symbol: "doc.on.clipboard.fill", title: "Clipboard", tint: .teal) {
+            PanelHeader(symbol: "doc.on.clipboard.fill", title: "Clipboard", tint: .teal,
+                        subtitle: history.paused ? "Paused" : "Kept in memory only") {
                 IconButton(symbol: history.paused ? "play.fill" : "pause.fill", help: history.paused ? "Resume" : "Pause recording") { history.paused.toggle() }
                 IconButton(symbol: "trash", help: "Clear history") { history.clear() }
             }
-            HStack {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("Search", text: $query).textFieldStyle(.plain)
-            }
-            .padding(8)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.primary.opacity(0.06)))
+            SearchField(text: $query)
             if filtered.isEmpty {
-                EmptyHint(symbol: "doc.on.clipboard", text: history.paused ? "Recording paused" : "Everything you copy appears here.\nKept in memory only.")
+                EmptyHint(symbol: "doc.on.clipboard", text: history.paused ? "Recording paused" : "Nothing copied yet",
+                          detail: history.paused ? nil : "Everything you copy appears here")
             }
             ForEach(filtered.prefix(40)) { item in
                 Button { history.copy(item); copiedID = item.id } label: {
@@ -312,7 +297,7 @@ struct ClipboardPanel: View {
                             Text(item.masked.trimmingCharacters(in: .whitespacesAndNewlines)).font(.system(size: 12.5, design: item.isSecret ? .monospaced : .default))
                                 .lineLimit(2).multilineTextAlignment(.leading).privacySensitive()
                             Text([item.app, Fmt.ago(item.date), item.isSecret ? "secret · auto-removes" : nil].compactMap { $0 }.joined(separator: " · "))
-                                .font(.system(size: 10.5)).foregroundStyle(.tertiary)
+                                .font(.system(size: 10.5)).foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
                         if copiedID == item.id { Image(systemName: "checkmark").foregroundStyle(.green) }
@@ -322,8 +307,6 @@ struct ClipboardPanel: View {
                 .buttonStyle(.plain)
                 .contextMenu { Button("Remove", role: .destructive) { history.remove(item) } }
             }
-            Text("In memory only · password-manager copies are never recorded")
-                .font(.system(size: 10)).foregroundStyle(.tertiary).frame(maxWidth: .infinity)
         }
     }
 }

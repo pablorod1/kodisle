@@ -33,11 +33,11 @@ live widget tiles, and a menu bar panel.
 - **Git**: the most recently active local repos: branch, ahead/behind, uncommitted changes.
 - **Endpoints**: HTTP health checks with latency sparklines; the island alerts when one goes down or recovers.
 - **Docker**: containers with start / stop / restart (Docker Desktop, OrbStack, Colima).
-- **System**: CPU, memory, disk, battery.
 - **Vercel**: latest deployments across your personal account and teams; the island tells you when a deploy is ready or fails.
 - **Clipboard history**: everything you copy, searchable, in memory only. Password-manager copies are never recorded and tokens are masked and auto-removed.
 - **Generator**: random or memorable passwords with strength meter, UUIDs, numbers, lorem ipsum.
 - **Downloads**: searchable, grouped by day, with thumbnails; drag files out.
+- **System**: CPU history and per-core load, memory breakdown, disk, battery, network and top processes.
 - **Focus timer** and **Calculator**.
 
 ## Integrations (opt-in, Settings › Integrations)

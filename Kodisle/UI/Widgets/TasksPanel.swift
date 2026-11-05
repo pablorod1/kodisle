@@ -11,17 +11,20 @@ struct TasksPanel: View {
     var body: some View {
         let sections = list.sections(project: project)
         VStack(alignment: .leading, spacing: 8) {
-            PanelHeader(symbol: "checklist", title: "Tasks", tint: .indigo) {
-                Text(list.pendingCount == 0 ? "All done" : "\(list.pendingCount) pending")
-                    .font(.caption).foregroundStyle(.secondary).contentTransition(.numericText())
+            PanelHeader(symbol: "checklist", title: "Tasks", tint: .indigo, subtitle: summary) {
+                if list.pendingCount + list.doneTodayCount > 0 {
+                    UsageRing(percent: Double(list.doneTodayCount) / Double(list.pendingCount + list.doneTodayCount) * 100,
+                              tint: .indigo, size: 26, lineWidth: 3.5, showsLabel: false)
+                        .help("Done today")
+                }
                 if !list.projects.isEmpty { projectFilter }
             }
 
-            HStack {
-                Image(systemName: "plus").foregroundStyle(.secondary)
-                TextField("Add a task…", text: $draft).textFieldStyle(.plain).onSubmit(add)
+            HStack(spacing: 7) {
+                Image(systemName: "plus").font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                TextField("Add a task…", text: $draft).textFieldStyle(.plain).font(.system(size: 13)).onSubmit(add)
             }
-            .padding(8)
+            .padding(.horizontal, 10).frame(height: 32)
             .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.primary.opacity(0.06)))
 
             if let error = list.error {
@@ -38,6 +41,11 @@ struct TasksPanel: View {
         .onAppear { list.refreshDay() }
     }
 
+    private var summary: String {
+        let pending = list.pendingCount == 0 ? "All done" : "\(list.pendingCount) pending"
+        return list.doneTodayCount > 0 ? "\(pending) · \(list.doneTodayCount) done today" : pending
+    }
+
     private var projectFilter: some View {
         Menu {
             Button("All projects") { project = nil }
@@ -45,7 +53,7 @@ struct TasksPanel: View {
             ForEach(list.projects, id: \.self) { name in Button(name) { project = name } }
         } label: {
             Image(systemName: project == nil ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
-                .frame(width: 24, height: 24).background(Circle().fill(.primary.opacity(0.07)))
+                .frame(width: 26, height: 26).background(Circle().fill(.primary.opacity(0.07)))
         }
         .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
         .help(project ?? "Filter by project")
@@ -138,7 +146,7 @@ private struct TodoRow: View {
                         .lineLimit(expanded ? nil : 2)
                         .privacySensitive()
                     if !meta.isEmpty {
-                        Text(meta).font(.system(size: 10.5)).foregroundStyle(.tertiary).lineLimit(1).privacySensitive()
+                        Text(meta).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1).privacySensitive()
                     }
                 }
                 Spacer(minLength: 0)

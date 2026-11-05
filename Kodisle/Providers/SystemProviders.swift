@@ -107,19 +107,31 @@ enum UnixHTTP {
 // MARK: - System
 
 final class SystemSampler {
-    private var previous: (user: UInt64, system: UInt64, idle: UInt64, nice: UInt64)?
+    private typealias Ticks = (user: UInt64, system: UInt64, idle: UInt64, nice: UInt64)
+    private var previous: Ticks?
+    private var previousCores: [Ticks] = []
+    /// `if_data` counters are 32-bit, so deltas are kept per interface and wrap safely.
+    private var previousNet: [String: (down: UInt32, up: UInt32)] = [:]
+    private var previousNetDate: Date?
 
     func snapshot() -> SystemSnapshot {
         var snap = SystemSnapshot()
-        snap.cpu = cpu()
-        snap.memUsed = memoryUsed()
-        snap.diskFree = (try? URL(fileURLWithPath: "/").resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey]))?
-            .volumeAvailableCapacityForImportantUsage ?? 0
+        (snap.cpu, snap.cpuUser, snap.cpuSystem) = cpu()
+        snap.cores = cores()
+        var load = [0.0]
+        if getloadavg(&load, 1) == 1 { snap.loadAverage = load[0] }
+        memory(into: &snap)
+        snap.swapUsed = swapUsed()
+        if let values = try? URL(fileURLWithPath: "/").resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey]) {
+            snap.diskFree = values.volumeAvailableCapacityForImportantUsage ?? 0
+            snap.diskTotal = Int64(values.volumeTotalCapacity ?? 0)
+        }
+        (snap.netDown, snap.netUp) = network()
         snap.battery = battery()
         return snap
     }
 
-    private func cpu() -> Double {
+    private func cpu() -> (total: Double, user: Double, system: Double) {
         var info = host_cpu_load_info()
         var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.stride / MemoryLayout<integer_t>.stride)
         let kr = withUnsafeMutablePointer(to: &info) {
@@ -127,16 +139,41 @@ final class SystemSampler {
                 host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, $0, &count)
             }
         }
-        guard kr == KERN_SUCCESS else { return 0 }
-        let now = (UInt64(info.cpu_ticks.0), UInt64(info.cpu_ticks.1), UInt64(info.cpu_ticks.2), UInt64(info.cpu_ticks.3))
+        guard kr == KERN_SUCCESS else { return (0, 0, 0) }
+        let now: Ticks = (UInt64(info.cpu_ticks.0), UInt64(info.cpu_ticks.1), UInt64(info.cpu_ticks.2), UInt64(info.cpu_ticks.3))
         defer { previous = now }
-        guard let p = previous else { return 0 }
-        let user = now.0 &- p.user, system = now.1 &- p.system, idle = now.2 &- p.idle, nice = now.3 &- p.nice
+        guard let p = previous else { return (0, 0, 0) }
+        let user = now.user &- p.user, system = now.system &- p.system, idle = now.idle &- p.idle, nice = now.nice &- p.nice
         let total = user + system + idle + nice
-        return total == 0 ? 0 : Double(user + system + nice) / Double(total)
+        guard total > 0 else { return (0, 0, 0) }
+        let share = { (ticks: UInt64) in Double(ticks) / Double(total) }
+        return (share(user + system + nice), share(user + nice), share(system))
     }
 
-    private func memoryUsed() -> UInt64 {
+    private func cores() -> [Double] {
+        var processors: natural_t = 0
+        var info: processor_info_array_t?
+        var infoCount: mach_msg_type_number_t = 0
+        guard host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &processors, &info, &infoCount) == KERN_SUCCESS,
+              let info else { return [] }
+        defer {
+            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: info), vm_size_t(infoCount) * vm_size_t(MemoryLayout<integer_t>.stride))
+        }
+        let states = Int(CPU_STATE_MAX)
+        let now: [Ticks] = (0..<Int(processors)).map { core in
+            let ticks = { (state: Int32) in UInt64(UInt32(bitPattern: info[core * states + Int(state)])) }
+            return (ticks(CPU_STATE_USER), ticks(CPU_STATE_SYSTEM), ticks(CPU_STATE_IDLE), ticks(CPU_STATE_NICE))
+        }
+        defer { previousCores = now }
+        guard previousCores.count == now.count else { return now.map { _ in 0 } }
+        return zip(now, previousCores).map { n, p in
+            let busy = (n.user &- p.user) + (n.system &- p.system) + (n.nice &- p.nice)
+            let total = busy + (n.idle &- p.idle)
+            return total == 0 ? 0 : Double(busy) / Double(total)
+        }
+    }
+
+    private func memory(into snap: inout SystemSnapshot) {
         var stats = vm_statistics64()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.stride / MemoryLayout<integer_t>.stride)
         let kr = withUnsafeMutablePointer(to: &stats) {
@@ -144,10 +181,46 @@ final class SystemSampler {
                 host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &count)
             }
         }
-        guard kr == KERN_SUCCESS else { return 0 }
+        guard kr == KERN_SUCCESS else { return }
         let page = UInt64(vm_kernel_page_size)
-        let app = UInt64(stats.internal_page_count) &- UInt64(stats.purgeable_count)
-        return (app + UInt64(stats.wire_count) + UInt64(stats.compressor_page_count)) * page
+        snap.memApp = (UInt64(stats.internal_page_count) &- UInt64(stats.purgeable_count)) * page
+        snap.memWired = UInt64(stats.wire_count) * page
+        snap.memCompressed = UInt64(stats.compressor_page_count) * page
+        snap.memUsed = snap.memApp + snap.memWired + snap.memCompressed
+    }
+
+    private func swapUsed() -> UInt64 {
+        var usage = xsw_usage()
+        var size = MemoryLayout<xsw_usage>.size
+        return sysctlbyname("vm.swapusage", &usage, &size, nil, 0) == 0 ? usage.xsu_used : 0
+    }
+
+    private func network() -> (down: Double, up: Double) {
+        var head: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&head) == 0 else { return (0, 0) }
+        defer { freeifaddrs(head) }
+        var current: [String: (down: UInt32, up: UInt32)] = [:]
+        var cursor = head
+        while let entry = cursor?.pointee {
+            cursor = entry.ifa_next
+            let name = String(cString: entry.ifa_name)
+            // Physical interfaces only: tunnels would count the same traffic twice.
+            guard name.hasPrefix("en"), entry.ifa_addr?.pointee.sa_family == UInt8(AF_LINK),
+                  let data = entry.ifa_data?.assumingMemoryBound(to: if_data.self).pointee else { continue }
+            current[name] = (data.ifi_ibytes, data.ifi_obytes)
+        }
+        let now = Date()
+        defer { previousNet = current; previousNetDate = now }
+        guard let last = previousNetDate else { return (0, 0) }
+        let elapsed = now.timeIntervalSince(last)
+        guard elapsed > 0.5 else { return (0, 0) }
+        var down: UInt64 = 0, up: UInt64 = 0
+        for (name, value) in current {
+            guard let old = previousNet[name] else { continue }
+            down += UInt64(value.down &- old.down)
+            up += UInt64(value.up &- old.up)
+        }
+        return (Double(down) / elapsed, Double(up) / elapsed)
     }
 
     private func battery() -> BatteryInfo? {
@@ -159,12 +232,26 @@ final class SystemSampler {
             let current = desc[kIOPSCurrentCapacityKey] as? Int ?? 0
             let max = desc[kIOPSMaxCapacityKey] as? Int ?? 100
             let minutes = desc[kIOPSTimeToEmptyKey] as? Int
+            let toFull = desc[kIOPSTimeToFullChargeKey] as? Int
             return BatteryInfo(percent: max > 0 ? current * 100 / max : current,
                                isCharging: desc[kIOPSIsChargingKey] as? Bool ?? false,
                                onAC: desc[kIOPSPowerSourceStateKey] as? String == kIOPSACPowerValue,
-                               minutesRemaining: (minutes ?? -1) > 0 ? minutes : nil)
+                               minutesRemaining: (minutes ?? -1) > 0 ? minutes : nil,
+                               minutesToFull: (toFull ?? -1) > 0 ? toFull : nil)
         }
         return nil
+    }
+}
+
+enum ProcessProvider {
+    /// Heaviest processes by CPU. `-c` gives the executable name only, never its arguments.
+    static func top(limit: Int = 4) async -> [TopProcess] {
+        guard let result = try? await Shell.run("ps", ["-Aceo", "pcpu=,rss=,comm=", "-r"], timeout: 3), result.ok else { return [] }
+        return result.text.split(separator: "\n").prefix(limit).compactMap { line in
+            let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+            guard fields.count == 3, let cpu = Double(fields[0]), let rss = Int64(fields[1]) else { return nil }
+            return TopProcess(name: String(fields[2]), cpu: cpu, memory: rss * 1024)
+        }
     }
 }
 

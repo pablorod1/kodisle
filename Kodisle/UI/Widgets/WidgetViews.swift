@@ -137,7 +137,7 @@ struct WidgetTile: View {
     private func aiTile(_ provider: AIProvider, _ usage: AIUsage?, _ error: String?) -> some View {
         if let usage {
             TileLayout(title: "\(provider.shortName) \(Fmt.percent(usage.fiveHour?.usedPercent ?? 0))",
-                       subtitle: "Week \(Fmt.percent(usage.weekly?.usedPercent ?? 0)) · \(Fmt.resetIn(usage.fiveHour?.resetsAt))") {
+                       subtitle: "Week \(Fmt.percent(usage.weekly?.usedPercent ?? 0)) · \(Fmt.resetIn(usage.fiveHour?.resetsAt, short: true))") {
                 UsageRing(percent: usage.fiveHour?.usedPercent ?? 0, size: 32, lineWidth: 3.5, showsLabel: false)
                     .overlay(Image(systemName: provider.symbol).font(.system(size: 11, weight: .bold)).foregroundStyle(provider.tint))
             }

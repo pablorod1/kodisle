@@ -12,10 +12,19 @@ enum Fmt {
         return "\(s / 86_400)d \(s % 86_400 / 3600)h"
     }
 
-    static func resetIn(_ date: Date?) -> String {
+    static func resetIn(_ date: Date?, short: Bool = false) -> String {
         guard let date else { return "" }
         let remaining = date.timeIntervalSinceNow
-        return remaining <= 0 ? "reset" : "resets in \(duration(remaining))"
+        if remaining <= 0 { return "reset" }
+        return short ? duration(remaining) : "resets in \(duration(remaining))"
+    }
+
+    static func rate(_ bytesPerSecond: Double) -> String {
+        let formatter = ByteCountFormatter()
+        formatter.countStyle = .file
+        formatter.allowedUnits = [.useKB, .useMB, .useGB]
+        formatter.allowsNonnumericFormatting = false              // "0 KB", never "Zero KB"
+        return "\(formatter.string(fromByteCount: Int64(bytesPerSecond)))/s"
     }
 
     static func bytes(_ value: Int64) -> String {

@@ -19,6 +19,7 @@ final class KodisleStore {
     var containers: [DockerContainer] = []
     var dockerAvailable = false
     var system = SystemSnapshot()
+    var systemHistory = SystemHistory()
     var downloads: [DownloadItem] = []
     var currentEvent: KodisleEvent?
     var recentEvents: [KodisleEvent] = []
@@ -30,6 +31,7 @@ final class KodisleStore {
 
     @ObservationIgnored private var tasks: [Task<Void, Never>] = []
     @ObservationIgnored private let sampler = SystemSampler()
+    @ObservationIgnored private var history = SystemHistory()
     @ObservationIgnored private var downloadsWatcher: DirectoryWatcher?
     @ObservationIgnored private var bridge: Bridge?
     @ObservationIgnored private var visibleCounts: [WidgetID: Int] = [:]
@@ -53,7 +55,7 @@ final class KodisleStore {
             loop({ _ in 30 }) { await $0.refreshRepos() },
             loop({ $0.config.endpointRefreshSeconds }) { await $0.refreshEndpoints() },
             loop({ _ in 15 }) { if $0.isVisible(.docker) { await $0.refreshDocker() } },
-            loop({ _ in 5 }) { if $0.isVisible(.system, .battery, .downloads) { $0.sampleSystem() } },
+            loop({ _ in 5 }) { $0.sampleSystem() },
             loop({ $0.deployments.contains(where: \.isActive) ? 12 : 60 }) { await $0.refreshVercel() },
             loop({ _ in 2 }) { $0.pruneAnsweredRequests() },
             loop({ _ in 300 }) { _ in TodoList.shared.refreshDay() },
@@ -109,7 +111,7 @@ final class KodisleStore {
         // Refresh on-demand sources right away when they come on screen.
         switch id {
         case .docker: Task { await refreshDocker() }
-        case .system, .battery, .downloads: sampleSystem()
+        case .system, .battery, .downloads: sampleSystem(record: false)
         default: break
         }
     }
@@ -120,12 +122,20 @@ final class KodisleStore {
 
     func isVisible(_ ids: WidgetID...) -> Bool { ids.contains { visibleCounts[$0, default: 0] > 0 } }
 
-    private func sampleSystem() {
+    /// The charts need history from before their widget opened, so samples are recorded in the
+    /// background whenever the System widget is in use; the UI only updates while it's visible.
+    private func sampleSystem(record: Bool = true) {
+        let visible = isVisible(.system, .battery, .downloads)
+        let tracked = config.dockWidgets.contains(.system) || config.islandTabs.contains(.system)
+        guard visible || tracked else { return }
         var snap = sampler.snapshot()
         snap.cpu = (snap.cpu * 100).rounded() / 100                       // 1% steps
         snap.memUsed = snap.memUsed / (64 << 20) * (64 << 20)               // 64 MB steps
         snap.diskFree = snap.diskFree / (256 << 20) * (256 << 20)
+        if record { history.append(snap) }
+        guard visible else { return }
         if snap != system { system = snap }
+        if history != systemHistory { systemHistory = history }
     }
 
     /// No polling while the displays sleep or the session is locked / switched away.

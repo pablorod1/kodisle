@@ -53,6 +53,25 @@ enum WidgetID: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+extension WidgetID {
+    /// Identity color, shared by the widget's panel, row icons and island tab.
+    var tint: Color {
+        switch self {
+        case .ai, .agents: .purple
+        case .claude: AIProvider.claude.tint
+        case .codex: AIProvider.codex.tint
+        case .tasks: .indigo
+        case .devServers: .green
+        case .github, .vercel, .calculator: .primary
+        case .git, .timer: .orange
+        case .endpoints, .clipboard: .teal
+        case .docker, .downloads: .blue
+        case .system, .battery: .mint
+        case .generator: .yellow
+        }
+    }
+}
+
 // MARK: - AI
 
 enum AIProvider: String, CaseIterable, Identifiable {
@@ -235,14 +254,49 @@ struct BatteryInfo: Equatable {
     var isCharging: Bool
     var onAC: Bool
     var minutesRemaining: Int?
+    var minutesToFull: Int?
 }
 
 struct SystemSnapshot: Equatable {
     var cpu: Double = 0
+    var cpuUser: Double = 0
+    var cpuSystem: Double = 0
+    /// Load of each logical core, 0...1.
+    var cores: [Double] = []
+    var loadAverage: Double = 0
     var memUsed: UInt64 = 0
     var memTotal: UInt64 = ProcessInfo.processInfo.physicalMemory
+    var memApp: UInt64 = 0
+    var memWired: UInt64 = 0
+    var memCompressed: UInt64 = 0
+    var swapUsed: UInt64 = 0
     var diskFree: Int64 = 0
+    var diskTotal: Int64 = 0
+    /// Bytes per second over Ethernet and Wi-Fi.
+    var netDown: Double = 0
+    var netUp: Double = 0
     var battery: BatteryInfo?
+}
+
+/// Recent samples behind the System panel's charts, oldest first.
+struct SystemHistory: Equatable {
+    static let capacity = 72                // 6 minutes at one sample every 5 s
+    var cpu: [Double] = []
+    var netDown: [Double] = []
+    var netUp: [Double] = []
+
+    mutating func append(_ snapshot: SystemSnapshot) {
+        cpu = Array((cpu + [snapshot.cpu * 100]).suffix(Self.capacity))
+        netDown = Array((netDown + [snapshot.netDown]).suffix(Self.capacity))
+        netUp = Array((netUp + [snapshot.netUp]).suffix(Self.capacity))
+    }
+}
+
+struct TopProcess: Identifiable, Equatable {
+    var id: String { name }
+    var name: String
+    var cpu: Double
+    var memory: Int64
 }
 
 // MARK: - Downloads

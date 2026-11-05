@@ -160,18 +160,18 @@ struct DockView: View {
     // MARK: Popover
 
     private func popover(_ id: WidgetID, containerWidth: CGFloat, spaceHeight: CGFloat) -> some View {
-        let width: CGFloat = id == .downloads ? 380 : 400
+        let width: CGFloat = 400
         let x = min(max(model.panelAnchorX, width / 2 + 12), containerWidth - width / 2 - 12)
         let shape = RoundedRectangle(cornerRadius: 30, style: .continuous)
         return ScrollView {
-            WidgetPanel(id: id).padding(18)
+            WidgetPanel(id: id).padding(16)
         }
         .scrollIndicators(.never)
         .frame(width: width)
-        .frame(maxHeight: 520)
+        .frame(maxHeight: 550)
         .fixedSize(horizontal: false, vertical: true)
-        // A light tint keeps text legible over busy windows without losing the glass.
-        .glassEffect(.regular.tint(colorScheme == .dark ? .black.opacity(0.32) : .white.opacity(0.45)), in: shape)
+        // The tint keeps text legible over busy windows without losing the glass.
+        .glassEffect(.regular.tint(colorScheme == .dark ? .black.opacity(0.6) : .white.opacity(0.68)), in: shape)
         .overlay {
             shape.strokeBorder(LinearGradient(colors: [.white.opacity(0.3), .white.opacity(0.05)], startPoint: .top, endPoint: .bottom), lineWidth: 0.75)
                 .allowsHitTesting(false)
