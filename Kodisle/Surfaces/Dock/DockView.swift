@@ -4,14 +4,23 @@ import UniformTypeIdentifiers
 /// Geometry of the macOS Dock (Tahoe), derived from the icon tile size.
 struct DockMetrics {
     let tile: CGFloat
+    var tileWidth: CGFloat = DockMetrics.minTileWidth
     var spacing: CGFloat { (tile * 0.08).rounded() }           // ~4 pt at 52
     var padV: CGFloat { (tile * 0.17).rounded() }              // ~9 pt at 52 (room for the running dot)
     var padH: CGFloat { (tile * 0.16).rounded() }
     var height: CGFloat { tile + padV * 2 }
     var radius: CGFloat { (height * 0.34).rounded() }          // continuous corners, ~24 pt at 52
     var innerRadius: CGFloat { max(8, radius - padV) }         // concentric radius for tiles
-    var tileWidth: CGFloat { (tile * 3.7).rounded() }
     var arrowWidth: CGFloat { (tile * 0.42).rounded() }
+
+    /// Narrowest tile that still reads: icon plus about 15 characters. Tile content has a fixed
+    /// size, so these widths don't scale with the icons.
+    static let minTileWidth: CGFloat = 150
+
+    /// Fewer tiles per page get more room each.
+    static func preferredTileWidth(perPage: Int) -> CGFloat {
+        max(minTileWidth, 288 - 28 * CGFloat(perPage))
+    }
 }
 
 struct DockView: View {
@@ -53,7 +62,7 @@ struct DockView: View {
         return settings.config.dockIconSize
     }
 
-    /// Shrinks icons, then tiles per page, so the dock always fits the screen.
+    /// Fits the dock to the screen: shrinks icons, then tile width, then tiles per page.
     private var layout: (metrics: DockMetrics, perPage: Int) {
         let slots = CGFloat(model.apps.count + 2)                  // apps + downloads + trash
         func width(_ m: DockMetrics, tiles: Int) -> CGFloat {
@@ -64,9 +73,10 @@ struct DockView: View {
         let minTiles = widgets.isEmpty ? 0 : 1
         var tile = preferredTile
         while tile > 28, width(DockMetrics(tile: tile), tiles: minTiles) > availableWidth { tile -= 2 }
-        let metrics = DockMetrics(tile: tile)
         var perPage = min(max(1, settings.config.dockWidgetsPerPage), max(1, widgets.count))
-        while perPage > 1, width(metrics, tiles: perPage) > availableWidth { perPage -= 1 }
+        while perPage > 1, width(DockMetrics(tile: tile), tiles: perPage) > availableWidth { perPage -= 1 }
+        var metrics = DockMetrics(tile: tile, tileWidth: DockMetrics.preferredTileWidth(perPage: perPage))
+        while metrics.tileWidth > DockMetrics.minTileWidth, width(metrics, tiles: perPage) > availableWidth { metrics.tileWidth -= 2 }
         return (metrics, perPage)
     }
 
@@ -107,10 +117,10 @@ struct DockView: View {
                 }
             }
             separator(m)
-            DockStackIcon(metrics: m, selected: model.openPanel == .downloads) { frame in
+            DockStackIcon(model: model, metrics: m, selected: model.openPanel == .downloads) { frame in
                 toggle(.downloads, anchor: frame.midX)
             }
-            TrashIcon(metrics: m)
+            TrashIcon(model: model, metrics: m)
         }
         .padding(.horizontal, m.padH)
         .padding(.bottom, m.padV)
@@ -278,9 +288,11 @@ private struct AppStrip: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: metrics.spacing) {
             ForEach(Array(apps.enumerated()), id: \.element.id) { index, app in
-                DockIcon(app: app, metrics: metrics, scale: scale(at: index), model: model)
+                DockIcon(app: app, metrics: metrics, scale: scale(at: index), lifts: maxScale <= 1, model: model)
+                    .transition(.scale(scale: 0.2, anchor: .bottom).combined(with: .opacity))
             }
         }
+        .animation(.spring(response: 0.38, dampingFraction: 0.78), value: apps.map(\.id))
         .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minX }) { minX in
             if mouseX == nil { restingMinX = minX }
         }
@@ -309,32 +321,66 @@ private struct AppStrip: View {
     }
 }
 
+/// Press and hover feedback shared by the dock's icons: the icon darkens and sinks while pressed
+/// like the system Dock's, and springs back. `hoverLift` gives a resting dock some life when
+/// magnification is off. `pressed` comes from `DockModel.mouseDown`: a SwiftUI press gesture here
+/// would swallow the clicks and drags of `onTapGesture` and `onDrag`.
+private struct DockPress: ViewModifier {
+    var pressed: Bool
+    var hovering = false
+    var hoverLift: CGFloat = 1
+    var pressScale: CGFloat = 0.92
+    var pressDim: Double = -0.3
+
+    func body(content: Content) -> some View {
+        content
+            .brightness(pressed ? pressDim : 0)
+            .scaleEffect(pressed ? pressScale : hovering ? hoverLift : 1, anchor: .bottom)
+            .animation(pressed ? .easeOut(duration: 0.08) : .spring(response: 0.28, dampingFraction: 0.5), value: pressed)
+            .animation(.spring(response: 0.26, dampingFraction: 0.58), value: hovering)
+    }
+}
+
 private struct DockIcon: View {
+    private static let hoverLift: CGFloat = 1.14
+
     let app: DockApp
     let metrics: DockMetrics
     let scale: CGFloat
+    let lifts: Bool
     let model: DockModel
     @State private var hovering = false
     @State private var dropTarget = false
+    @State private var bouncing = false
+
+    private var launching: Bool { model.launching.contains(app.path) }
 
     var body: some View {
-        Image(nsImage: IconCache.icon(forFile: app.path, size: scale > 1 ? metrics.tile * 2 : metrics.tile))
+        Image(nsImage: IconCache.icon(forFile: app.path, size: scale > 1 || hovering ? metrics.tile * 2 : metrics.tile))
             .resizable().interpolation(.high)
             .frame(width: metrics.tile * scale, height: metrics.tile * scale)
             .brightness(dropTarget ? 0.15 : 0)
+            .modifier(DockPress(pressed: hovering && model.mouseDown, hovering: hovering, hoverLift: lifts ? Self.hoverLift : 1))
+            // Rises fast and slows at the top, then falls back: the system Dock's launch bounce.
+            .offset(y: bouncing ? -metrics.tile * 0.5 : 0)
+            .animation(bouncing ? .easeOut(duration: 0.34).repeatForever(autoreverses: true) : .spring(response: 0.3, dampingFraction: 0.6),
+                       value: bouncing)
+            .onChange(of: launching, initial: true) { _, value in bouncing = value }
             .overlay(alignment: .bottom) {
                 Circle().fill(.primary.opacity(app.isRunning ? 0.7 : 0)).frame(width: 4, height: 4)
+                    .scaleEffect(app.isRunning ? 1 : 0.2)
                     .offset(y: metrics.padV * 0.5 + 2)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: app.isRunning)
             }
             .overlay(alignment: .top) {
                 if hovering {
                     DockTooltip(text: app.name)
                         .offset(y: -40)
-                        .transition(.opacity)
+                        .transition(.opacity.combined(with: .offset(y: 4)))
                 }
             }
             .opacity(model.draggingApp == app.path ? 0.35 : 1)
-            .animation(.spring(response: 0.25, dampingFraction: 0.68), value: hovering)
+            .animation(.easeOut(duration: 0.12), value: hovering)
             .onHover { hovering = $0 }
             .onTapGesture { model.launch(app) }
             .onDrag {
@@ -374,6 +420,7 @@ private struct DockWidgetTile: View {
             .background(shape.fill(.primary.opacity(selected ? 0.16 : hovering ? 0.11 : 0.065)))
             .overlay(shape.strokeBorder(.white.opacity(selected ? 0.22 : 0.08), lineWidth: 0.5))
             .contentShape(shape)
+            .modifier(DockPress(pressed: hovering && model.mouseDown, pressScale: 0.97, pressDim: -0.06))
             .opacity(model.draggingWidget == id ? 0.4 : 1)
             .onHover { hovering = $0 }
             .onTapGesture { onTap(frame) }
@@ -391,6 +438,7 @@ private struct DockWidgetTile: View {
 }
 
 private struct DockStackIcon: View {
+    let model: DockModel
     let metrics: DockMetrics
     let selected: Bool
     let onTap: (CGRect) -> Void
@@ -400,10 +448,11 @@ private struct DockStackIcon: View {
     var body: some View {
         Image(nsImage: IconCache.icon(forFile: DownloadsProvider.folder.path, size: metrics.tile))
             .resizable().frame(width: metrics.tile, height: metrics.tile)
-            .scaleEffect(selected ? 1.06 : 1, anchor: .bottom)
+            .modifier(DockPress(pressed: hovering && model.mouseDown, hovering: hovering || selected, hoverLift: 1.14))
             .overlay(alignment: .top) {
-                if hovering && !selected { DockTooltip(text: "Downloads").offset(y: -40).transition(.opacity) }
+                if hovering && !selected { DockTooltip(text: "Downloads").offset(y: -40).transition(.opacity.combined(with: .offset(y: 4))) }
             }
+            .animation(.easeOut(duration: 0.12), value: hovering)
             .onHover { hovering = $0 }
             .onTapGesture { onTap(frame) }
             .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }, action: { frame = $0 })
@@ -411,6 +460,7 @@ private struct DockStackIcon: View {
 }
 
 private struct TrashIcon: View {
+    let model: DockModel
     let metrics: DockMetrics
     @State private var targeted = false
     @State private var hovering = false
@@ -421,11 +471,11 @@ private struct TrashIcon: View {
     var body: some View {
         Image(nsImage: IconCache.named(NSImage.trashEmptyName, size: metrics.tile))
             .resizable().frame(width: metrics.tile, height: metrics.tile)
-            .scaleEffect(targeted ? 1.15 : 1, anchor: .bottom)
+            .modifier(DockPress(pressed: hovering && model.mouseDown, hovering: hovering || targeted, hoverLift: 1.14))
             .overlay(alignment: .top) {
-                if hovering { DockTooltip(text: "Trash").offset(y: -40).transition(.opacity) }
+                if hovering { DockTooltip(text: "Trash").offset(y: -40).transition(.opacity.combined(with: .offset(y: 4))) }
             }
-            .animation(.spring(response: 0.25, dampingFraction: 0.6), value: targeted)
+            .animation(.easeOut(duration: 0.12), value: hovering)
             .onHover { hovering = $0 }
             .onTapGesture { NSWorkspace.shared.open(trashURL) }
             .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in

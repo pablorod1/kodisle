@@ -20,6 +20,10 @@ final class DockModel {
     var panelFrame: CGRect = .zero
     var revealed = true
     var page = 0
+    /// Left button held inside the dock, for the icons' press feedback.
+    var mouseDown = false
+    /// Apps opening right now (their icon bounces until they're up).
+    var launching: Set<String> = []
     /// Extra space above the bar that magnified icons and tooltips occupy (still interactive).
     var headroom: CGFloat = 0
     /// Item being dragged inside the dock (for live reordering).
@@ -31,6 +35,7 @@ final class DockModel {
         Task { @MainActor [weak self] in
             while NSEvent.pressedMouseButtons & 1 != 0 { try? await Task.sleep(for: .milliseconds(120)) }
             try? await Task.sleep(for: .milliseconds(150))
+            self?.mouseDown = false                            // the drag loop eats the mouse up
             self?.draggingApp = nil
             self?.draggingWidget = nil
         }
@@ -78,6 +83,8 @@ final class DockModel {
             .filter { $0 != Self.finderPath && !pinned.contains($0) && $0 != Bundle.main.bundlePath }
         result += extra.map { make($0, pinned: false) }
         if result != apps { apps = result }
+        let up = launching.filter { runningPaths[$0] != nil }
+        if !up.isEmpty { launching.subtract(up) }
     }
 
     func runningApp(_ app: DockApp) -> NSRunningApplication? {
@@ -92,11 +99,21 @@ final class DockModel {
         if let running = runningApp(app) {
             if running.isActive { running.hide(); return }
             running.unhide()
+        } else {
+            bounce(app)
         }
         // Like the system Dock, go through Launch Services even when the app is already running:
         // it activates the app and sends a "reopen" event, so apps with no open windows create one
         // (e.g. Brave running in the background only to host an installed web app).
         NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: app.path), configuration: NSWorkspace.OpenConfiguration())
+    }
+
+    private func bounce(_ app: DockApp) {
+        launching.insert(app.path)
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(12))           // apps that never finish launching
+            self?.launching.remove(app.path)
+        }
     }
 
     func togglePin(_ app: DockApp) {
@@ -144,6 +161,7 @@ final class DockController {
     private var tracker: MouseTracker?
     private var observers: [NSObjectProtocol] = []
     private var hideTask: Task<Void, Never>?
+    private var pressMonitor: Any?
     private static let panelHeight: CGFloat = 640
     /// Set by the `-KodisleDebugDock` launch argument: keeps the dock visible for screenshots.
     static var forceReveal = false
@@ -164,6 +182,10 @@ final class DockController {
         }, onClick: { [weak self] point in
             MainActor.assumeIsolated { self?.outsideClick(point) }
         })
+        pressMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
+            self?.model.mouseDown = event.type == .leftMouseDown
+            return event
+        }
         observers.append(NotificationCenter.default.addObserver(
             forName: NSApplication.didChangeScreenParametersNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.layout() }
@@ -173,6 +195,7 @@ final class DockController {
     func tearDown() {
         sizeWatch?.cancel()
         tracker = nil
+        if let pressMonitor { NSEvent.removeMonitor(pressMonitor) }
         observers.forEach(NotificationCenter.default.removeObserver)
         panel.orderOut(nil)
         SystemDock.restore()
