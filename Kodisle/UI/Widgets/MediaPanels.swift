@@ -77,15 +77,18 @@ private struct WhatsAppIcon: View {
 
 struct WhatsAppPanel: View {
     @Environment(KodisleStore.self) private var store
+    /// A copy, so the reply survives the chat being read elsewhere and leaving the list.
+    @State private var replyingTo: WhatsAppChat?
 
     var body: some View {
         let snapshot = store.whatsapp
         VStack(alignment: .leading, spacing: 8) {
             PanelHeader(symbol: "message.fill", title: "WhatsApp", tint: .green, subtitle: subtitle(snapshot)) {
                 if snapshot.state != .notInstalled {
-                    IconButton(symbol: "arrow.up.forward.app", help: "Open WhatsApp") { WhatsAppProvider.open(nil) }
+                    IconButton(symbol: "arrow.up.forward.app", help: "Open WhatsApp") { if let url = WhatsAppProvider.appURL { Open.app(url) } }
                 }
             }
+            if let failure = store.whatsappFailure { WhatsAppFailureBanner(failure: failure) }
             switch snapshot.state {
             case .loading: EmptyHint(symbol: "hourglass", text: "Loading…")
             case .notInstalled: EmptyHint(symbol: "message", text: "WhatsApp isn't installed", detail: "Install WhatsApp for Mac to see unread chats here")
@@ -96,10 +99,18 @@ struct WhatsAppPanel: View {
                     .buttonStyle(PillButtonStyle())
                     .frame(maxWidth: .infinity)
             case .ready:
-                if snapshot.chats.isEmpty {
-                    EmptyHint(symbol: "checkmark.bubble", text: "No unread chats")
+                if let chat = replyingTo {
+                    WhatsAppReply(chat: chat) { withAnimation(.snappy) { replyingTo = nil } }
+                } else {
+                    if snapshot.chats.isEmpty {
+                        EmptyHint(symbol: "checkmark.bubble", text: "No unread chats")
+                    }
+                    RowGrid {
+                        ForEach(snapshot.chats) { chat in
+                            WhatsAppRow(chat: chat) { withAnimation(.snappy) { replyingTo = chat } }
+                        }
+                    }
                 }
-                RowGrid { ForEach(snapshot.chats) { WhatsAppRow(chat: $0) } }
             }
         }
     }
@@ -111,8 +122,31 @@ struct WhatsAppPanel: View {
     }
 }
 
+private struct WhatsAppFailureBanner: View {
+    @Environment(KodisleStore.self) private var store
+    let failure: WhatsAppFailure
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle").font(.system(size: 12)).foregroundStyle(.orange)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(failure.chat).font(.system(size: 12, weight: .semibold)).lineLimit(1).privacySensitive()
+                Text(failure.reason).font(.system(size: 11.5)).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            if let text = failure.text {
+                IconButton(symbol: "doc.on.doc", help: "Copy your reply") { Clipboard.copy(text) }
+            }
+            IconButton(symbol: "xmark", help: "Dismiss") { store.whatsappFailure = nil }
+        }
+        .rowStyle()
+    }
+}
+
 private struct WhatsAppRow: View {
+    @Environment(KodisleStore.self) private var store
     let chat: WhatsAppChat
+    let reply: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -137,9 +171,86 @@ private struct WhatsAppRow: View {
                         .background(Capsule().fill(chat.isMuted ? Color.secondary : .green))
                 }
             }
+            IconButton(symbol: "arrowshape.turn.up.left", help: "Reply", action: reply)
         }
         .rowStyle()
-        .onTapGesture { WhatsAppProvider.open(chat) }
+        .contentShape(Rectangle())
+        .onTapGesture { store.openWhatsApp(chat) }
+    }
+}
+
+/// One chat at a time: a long message needs the room, and the field must stay on screen.
+private struct WhatsAppReply: View {
+    @Environment(KodisleStore.self) private var store
+    let chat: WhatsAppChat
+    let close: () -> Void
+    @State private var draft = ""
+    @State private var sending = false
+    @FocusState private var fieldFocused: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                IconButton(symbol: "chevron.left", help: "Back", action: close)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(chat.name).font(.system(size: 13, weight: .semibold)).lineLimit(1).privacySensitive()
+                    Text(detail).font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                IconButton(symbol: "arrow.up.forward.app", help: "Open chat") { store.openWhatsApp(chat) }
+            }
+            ScrollView {
+                Text(chat.message.ifEmpty("New message"))
+                    .font(.system(size: 13))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .privacySensitive()
+                    .padding(10)
+            }
+            .frame(maxHeight: 380)
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.primary.opacity(0.06)))
+            field
+        }
+        .onAppear { fieldFocused = true }
+    }
+
+    /// Only the last message is read, which matters when there are more.
+    private var detail: String {
+        let age = Fmt.ago(chat.date)
+        return chat.unread > 1 ? "\(age) · last of \(chat.unread) unread" : age
+    }
+
+    private var field: some View {
+        HStack(spacing: 7) {
+            TextField("Reply to \(chat.name)…", text: $draft)
+                .textFieldStyle(.plain).font(.system(size: 13))
+                .focused($fieldFocused)
+                .disabled(sending)
+                .onSubmit(send)
+                .onExitCommand(perform: close)
+                .privacySensitive()
+            if sending {
+                ProgressView().controlSize(.small)
+            } else {
+                IconButton(symbol: "paperplane.fill", help: "Send", tint: .green, action: send)
+                    .disabled(trimmedDraft.isEmpty)
+            }
+        }
+        .padding(.leading, 10).padding(.trailing, 3).frame(height: 32)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.primary.opacity(0.06)))
+    }
+
+    private var trimmedDraft: String { draft.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private func send() {
+        let text = trimmedDraft
+        guard !text.isEmpty, !sending else { return }
+        sending = true
+        Task {
+            let sent = await store.replyWhatsApp(text, to: chat)
+            sending = false
+            if sent { close() }
+        }
     }
 }
 
@@ -210,9 +321,7 @@ struct SpotifyPanel: View {
             PanelHeader(symbol: "music.note", title: "Spotify", tint: spotifyGreen,
                         subtitle: store.spotify.map { $0.isPlaying ? "Playing" : "Paused" }) {
                 if let url = SpotifyProvider.appURL {
-                    IconButton(symbol: "arrow.up.forward.app", help: "Open Spotify") {
-                        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-                    }
+                    IconButton(symbol: "arrow.up.forward.app", help: "Open Spotify") { Open.app(url) }
                 }
             }
             if let track = store.spotify {

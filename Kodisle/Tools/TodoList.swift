@@ -27,6 +27,8 @@ final class TodoList {
     @ObservationIgnored private var watcher: DirectoryWatcher?
     @ObservationIgnored private var reloadTask: Task<Void, Never>?
 
+    func report(_ failure: Error) { error = failure.localizedDescription }
+
     func start() {
         guard watcher == nil else { return }
         try? FileManager.default.createDirectory(at: Bridge.directory, withIntermediateDirectories: true,

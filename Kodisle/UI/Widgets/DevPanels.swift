@@ -163,7 +163,7 @@ struct DevServersPanel: View {
                             }
                         }
                     } actions: {
-                        IconButton(symbol: "safari", help: "Open in browser") { if let url = server.primaryURL { NSWorkspace.shared.open(url) } }
+                        IconButton(symbol: "safari", help: "Open in browser") { if let url = server.primaryURL { Open.url(url) } }
                         IconButton(symbol: "doc.on.doc", help: "Copy URL") { Clipboard.copy("http://localhost:\(server.ports.first ?? 0)") }
                         IconButton(symbol: "folder", help: "Reveal project") { Open.reveal(server.cwd) }
                         if confirmStop == server.pid {

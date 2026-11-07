@@ -37,7 +37,7 @@ live widget tiles, and a menu bar panel.
 - **Clipboard history**: everything you copy, searchable, in memory only. Password-manager copies are never recorded and tokens are masked and auto-removed.
 - **Generator**: random or memorable passwords with strength meter, UUIDs, numbers, lorem ipsum.
 - **Downloads**: searchable, grouped by day, with thumbnails; drag files out.
-- **WhatsApp**: unread chats from WhatsApp for Mac, cycling through the dock tile; read locally, never sent anywhere.
+- **WhatsApp**: unread chats from WhatsApp for Mac, cycling through the dock tile; read locally, never sent anywhere. Click one to open that chat, or reply from the panel (needs the Accessibility permission).
 - **Spotify**: what's playing, with cover art, progress and playback controls.
 - **System**: CPU history and per-core load, memory breakdown, disk, battery, network and top processes.
 - **Focus timer** and **Calculator**.

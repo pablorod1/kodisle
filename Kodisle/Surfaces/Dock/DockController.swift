@@ -15,6 +15,8 @@ struct DockApp: Identifiable, Equatable {
 final class DockModel {
     var apps: [DockApp] = []
     var openPanel: WidgetID?
+    /// The panel an opened app last closed: failures reported there need it back.
+    var closedForApp: WidgetID?
     var panelAnchorX: CGFloat = 0
     var dockFrame: CGRect = .zero
     var panelFrame: CGRect = .zero
@@ -92,6 +94,7 @@ final class DockModel {
     }
 
     func launch(_ app: DockApp) {
+        Open.willOpen?()
         if app.path == Self.finderPath {
             NSWorkspace.shared.open(URL(fileURLWithPath: NSHomeDirectory()))
             return
@@ -170,6 +173,7 @@ final class DockController {
         SystemDock.hide()
         let root = DockView(model: model).kodisleEnvironment()
         model.focusPanel = { [weak self] in self?.panel.makeKey() }
+        Open.willOpen = { [weak self] in self?.closePanelForApp() }
         let host = OverlayPanel.hosting(root, size: CGSize(width: screen.frame.width, height: Self.panelHeight), anchor: .bottomFullWidth)
         panel.contentView = host
         layout(height: 200)
@@ -293,6 +297,13 @@ final class DockController {
             withAnimation(.snappy) { model.openPanel = nil }
             panel.resignKey()
         }
+    }
+
+    private func closePanelForApp() {
+        guard model.openPanel != nil else { return }
+        model.closedForApp = model.openPanel
+        withAnimation(.snappy) { model.openPanel = nil }
+        panel.releaseKeyboard()
     }
 
     func focusPanel() { panel.makeKey() }

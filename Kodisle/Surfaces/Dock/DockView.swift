@@ -98,6 +98,12 @@ struct DockView: View {
             .coordinateSpace(name: DockView.space)
             .onAppear { availableWidth = geo.size.width }
             .onChange(of: geo.size.width) { _, width in availableWidth = width }
+            .onChange(of: KodisleStore.shared.whatsappFailure) { _, failure in
+                // Opening the chat closed the panel, and the failure is shown in it.
+                guard failure != nil, model.openPanel == nil, model.closedForApp == .whatsapp else { return }
+                withAnimation(.snappy) { model.openPanel = .whatsapp }
+                model.focusPanel?()
+            }
         }
         // The window only crops the hosted content; never let a window-derived safe area inset it.
         .ignoresSafeArea()
@@ -477,7 +483,7 @@ private struct TrashIcon: View {
             }
             .animation(.easeOut(duration: 0.12), value: hovering)
             .onHover { hovering = $0 }
-            .onTapGesture { NSWorkspace.shared.open(trashURL) }
+            .onTapGesture { Open.url(trashURL) }
             .onDrop(of: [.fileURL], isTargeted: $targeted) { providers in
                 loadURLs(providers) { urls in
                     for url in urls { try? FileManager.default.trashItem(at: url, resultingItemURL: nil) }

@@ -21,6 +21,7 @@ final class KodisleStore {
     var system = SystemSnapshot()
     var systemHistory = SystemHistory()
     var whatsapp = WhatsAppSnapshot()
+    var whatsappFailure: WhatsAppFailure?
     var spotify: SpotifyTrack?
     var spotifyArtwork: NSImage?
     /// macOS refused Automation: no artwork or controls, but the track still shows.
@@ -338,6 +339,46 @@ final class KodisleStore {
     func refreshWhatsApp() async {
         let snapshot = await Task.detached(priority: .utility) { WhatsAppProvider.fetch() }.value
         if snapshot != whatsapp { whatsapp = snapshot }
+    }
+
+    func openWhatsApp(_ chat: WhatsAppChat) {
+        whatsappFailure = nil
+        // Links don't need the Accessibility permission, only checking where they landed does.
+        if !AppWindows.isTrusted, let link = WhatsAppProvider.link(to: chat) {
+            Open.url(link)
+            return
+        }
+        Open.willOpen?()
+        Task {
+            do {
+                try await WhatsAppAutomation.open(chat)
+            } catch {
+                reportWhatsApp(error, chat: chat, text: nil)
+            }
+            await refreshWhatsApp()
+        }
+    }
+
+    /// Returns whether the reply was sent. Runs to the end even if the panel closes meanwhile.
+    func replyWhatsApp(_ text: String, to chat: WhatsAppChat) async -> Bool {
+        whatsappFailure = nil
+        var sent = true
+        do {
+            try await WhatsAppAutomation.send(text, to: chat)
+        } catch {
+            reportWhatsApp(error, chat: chat, text: text)
+            sent = false
+        }
+        await refreshWhatsApp()
+        return sent
+    }
+
+    private func reportWhatsApp(_ error: Error, chat: WhatsAppChat, text: String?) {
+        if case WhatsAppAutomation.Failure.needsPermission = error {
+            AppWindows.requestAccess()
+            WhatsAppProvider.openApp()
+        }
+        whatsappFailure = WhatsAppFailure(chat: chat.name, reason: error.localizedDescription, text: text)
     }
 
     /// Track changes are pushed by Spotify, so nothing polls while it's closed or hidden.

@@ -324,12 +324,23 @@ struct WhatsAppChat: Identifiable, Equatable {
     /// The chat's JID.
     let id: String
     var name: String
-    var preview: String
+    /// The whole last message, line breaks included.
+    var message: String
     /// -1 when the chat was marked as unread by hand.
     var unread: Int
     var date: Date
     var isGroup: Bool
     var isMuted: Bool
+
+    var preview: String { message.replacingOccurrences(of: "\n", with: " ") }
+}
+
+/// Kept apart from the row: opening a chat marks it as read, which removes the row from the panel.
+struct WhatsAppFailure: Equatable {
+    var chat: String
+    var reason: String
+    /// The reply that wasn't sent, so it isn't lost.
+    var text: String?
 }
 
 struct WhatsAppSnapshot: Equatable {

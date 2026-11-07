@@ -71,6 +71,11 @@ and dropped after two minutes.
 - `lsof`, `ps`, `git status`, `docker ps` output.
 - `com.apple.dock` preferences, to import pinned apps and to hide/restore the Dock.
 
+## Local actions Kodisle takes
+
+- **Replying on WhatsApp**: there's no API, so Kodisle drives WhatsApp's window with the Accessibility permission: it brings WhatsApp to the front, pastes through the clipboard (restored right after, and marked transient so clipboard histories skip it) and presses Send. It only presses Send after checking that the open chat has the expected name and the composer holds exactly your reply, and only when you submit a reply. Opening a group or a contact without a known number works the same way, through WhatsApp's search.
+- **Starting Claude on a task**: only when you press *Claude*, Kodisle writes the task's title and notes to `~/.kodisle/prompts/<uuid>.txt` (mode 600, deleted when the tab starts), rewrites `~/.warp/tab_configs/kodisle_claude.toml` and opens it. The prompt is read from that file, never interpolated into a command, so a task's text can't run as shell code. Nothing runs until you press Enter in the tab.
+
 ## Endpoint URLs
 
 Endpoint URLs are stored in plain preferences. Don't put tokens in them. They're shown redacted

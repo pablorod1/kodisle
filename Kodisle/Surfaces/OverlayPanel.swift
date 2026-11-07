@@ -53,6 +53,14 @@ final class OverlayPanel: NSPanel {
         }
     }
 
+    /// `resignKey()` only announces the change. Ordering out is what makes the window server hand
+    /// the keyboard back to the frontmost app, even one that never stopped being active.
+    func releaseKeyboard() {
+        guard isKeyWindow else { return }
+        orderOut(nil)
+        orderFrontRegardless()
+    }
+
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
 }

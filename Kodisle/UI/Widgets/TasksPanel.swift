@@ -157,6 +157,15 @@ private struct TodoRow: View {
                     Image(systemName: "sparkles").font(.system(size: 10)).foregroundStyle(.purple).padding(.top, 3)
                         .help("Added by Claude")
                 }
+                if !item.isDone && ClaudeLauncher.isAvailable {
+                    Button("Claude", action: startClaude)
+                        .buttonStyle(.plain)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(.purple)
+                        .padding(.horizontal, 8).frame(height: 21)
+                        .background(Capsule().fill(.purple.opacity(0.14)))
+                        .help("Open in Warp with this task as the prompt, ready to start with Enter")
+                }
             }
             .contentShape(Rectangle())
             .onTapGesture {
@@ -174,6 +183,19 @@ private struct TodoRow: View {
             Button("Copy title") { Clipboard.copy(item.title) }
             Divider()
             Button("Delete", role: .destructive) { list.delete(item) }
+        }
+    }
+
+    private func startClaude() {
+        let item = item
+        let root = AppSettings.shared.config.projectsRootURL
+        Task {
+            do {
+                try await Task.detached(priority: .userInitiated) { try ClaudeLauncher.prepare(item, projectsRoot: root) }.value
+                ClaudeLauncher.openTab()
+            } catch {
+                list.report(error)
+            }
         }
     }
 }

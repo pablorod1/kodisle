@@ -104,13 +104,28 @@ enum Clipboard {
 
 @MainActor
 enum Open {
+    /// Called before anything is opened, so the app that comes up gets the keyboard.
+    /// Set by the dock to get its panel out of the way.
+    static var willOpen: (() -> Void)?
+
     static func url(_ string: String) {
-        if let url = URL(string: string) { NSWorkspace.shared.open(url) }
+        if let url = URL(string: string) { self.url(url) }
+    }
+    /// A link or file, in whichever app handles it.
+    static func url(_ url: URL) {
+        willOpen?()
+        NSWorkspace.shared.open(url)
+    }
+    static func app(_ url: URL) {
+        willOpen?()
+        NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
     }
     static func reveal(_ path: String) {
+        willOpen?()
         NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
     }
     static func terminal(_ path: String) {
+        willOpen?()
         let url = URL(fileURLWithPath: path)
         let terminal = URL(fileURLWithPath: "/System/Applications/Utilities/Terminal.app")
         NSWorkspace.shared.open([url], withApplicationAt: terminal, configuration: NSWorkspace.OpenConfiguration())

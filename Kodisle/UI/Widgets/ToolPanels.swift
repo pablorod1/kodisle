@@ -209,7 +209,7 @@ struct DownloadsPanel: View {
             PanelHeader(symbol: "arrow.down.circle.fill", title: "Downloads", tint: .blue,
                         subtitle: "\(store.downloads.count) items · \(Fmt.bytes(store.system.diskFree)) available") {
                 Menu {
-                    Button("Open Downloads folder") { NSWorkspace.shared.open(DownloadsProvider.folder) }
+                    Button("Open Downloads folder") { Open.url(DownloadsProvider.folder) }
                     Button("Refresh") { store.refreshDownloads() }
                 } label: {
                     Image(systemName: "ellipsis").frame(width: 26, height: 26).background(Circle().fill(.primary.opacity(0.07)))
@@ -244,10 +244,10 @@ private struct DownloadRow: View {
             Spacer(minLength: 0)
         }
         .rowStyle()
-        .onTapGesture(count: 1) { NSWorkspace.shared.open(item.url) }
+        .onTapGesture(count: 1) { Open.url(item.url) }
         .onDrag { NSItemProvider(contentsOf: item.url) ?? NSItemProvider() }
         .contextMenu {
-            Button("Open") { NSWorkspace.shared.open(item.url) }
+            Button("Open") { Open.url(item.url) }
             Button("Show in Finder") { Open.reveal(item.url.path) }
             Button("Copy path") { Clipboard.copy(item.url.path) }
             Divider()
