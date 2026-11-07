@@ -132,7 +132,8 @@ enum GitHubProvider {
 enum GitProvider {
     private static let skipped: Set<String> = ["node_modules", "vendor", "build", "dist", "Pods", "DerivedData", "target", "venv"]
 
-    static func discover(root: URL, depth: Int = 3) -> [URL] {
+    /// Deep enough for repos inside plain folders, like ~/Dev/auvex/crm/monorepo/rs-crm.
+    static func discover(root: URL, depth: Int = 6) -> [URL] {
         let fm = FileManager.default
         var found: [URL] = []
         var queue: [(URL, Int)] = [(root, 0)]
